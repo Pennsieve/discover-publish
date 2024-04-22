@@ -16,6 +16,8 @@
 
 package com.pennsieve.publish
 
+import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
+import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.{
   ChecksumAlgorithm,
@@ -29,8 +31,10 @@ import software.amazon.awssdk.services.s3.model.{
   UploadPartCopyRequest
 }
 
+import java.util.concurrent.TimeUnit
 import scala.annotation.tailrec
-import scala.concurrent.{ ExecutionContext, Future }
+import scala.concurrent.duration.{ Duration, FiniteDuration }
+import scala.concurrent.{ Await, ExecutionContext, Future }
 import scala.jdk.CollectionConverters._
 
 case class ObjectIdentity(bucket: String, key: String)
@@ -190,4 +194,78 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
 object MultipartUploader {
   def apply(s3Client: S3Client, maxPartSize: Long) =
     new MultipartUploader(s3Client, maxPartSize)
+}
+
+object MultipartUploaderMain {
+  val UNKNOWN = "unknown"
+  val MAX_PART_SIZE: Long = 50 * 1024 * 1024
+  val MAX_WAIT_TIME: FiniteDuration = Duration(60, TimeUnit.MINUTES)
+
+  implicit val ec: ExecutionContext =
+    scala.concurrent.ExecutionContext.Implicits.global
+
+  def s3Client(settings: Map[String, String]): S3Client = {
+    val region = settings.get("--region") match {
+      case Some(region) => Region.of(region)
+      case None => Region.US_EAST_1
+    }
+
+    val sharedHttpClient = UrlConnectionHttpClient.builder().build()
+
+    S3Client.builder
+      .region(region)
+      .httpClient(sharedHttpClient)
+      .build
+  }
+
+  def maxPartSize(settings: Map[String, String]): Long =
+    settings.get("--maxPartSize") match {
+      case Some(value) => value.toLong
+      case None => MAX_PART_SIZE
+    }
+
+  @tailrec
+  def parseArgs(
+    args: List[String],
+    accum: Map[String, String]
+  ): Map[String, String] = {
+    var rest: List[String] = List()
+    var accumulator = accum
+    args match {
+      case h :: t =>
+        accumulator = accumulator + (h -> t(0))
+        rest = t.drop(1)
+        parseArgs(rest, accumulator)
+      case _ =>
+        accumulator
+    }
+  }
+
+  def copyRequest(settings: Map[String, String]) =
+    CopyRequest(
+      source = ObjectIdentity(
+        bucket = settings.getOrElse("--sourceBucket", UNKNOWN),
+        key = settings.getOrElse("--sourceKey", UNKNOWN)
+      ),
+      destination = ObjectIdentity(
+        bucket = settings.getOrElse("--destinationBucket", UNKNOWN),
+        key = settings.getOrElse("--destinationKey", UNKNOWN)
+      )
+    )
+
+  def main(args: Array[String]): Unit = {
+    println("MultipartUploaderMain.main()")
+    val settings = parseArgs(args.toList, Map.empty)
+    println(settings)
+
+    val request = copyRequest(settings)
+    println(request)
+
+    val s3 = s3Client(settings)
+    val partSize = maxPartSize(settings)
+    val multipartUploader = MultipartUploader(s3, partSize)
+    val resultF = multipartUploader.copy(request)
+    val result = Await.result(resultF, MAX_WAIT_TIME)
+    println(s"result: ${result}")
+  }
 }

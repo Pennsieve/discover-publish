@@ -259,6 +259,11 @@ lazy val discoverPublishSettings = Seq(
   assembly / assemblyMergeStrategy := defaultMergeStrategy.value
 )
 
+lazy val multipartUploaderMain = Seq(
+  name := "multipart-uploader",
+  Compile / run / mainClass := Some("com.pennsieve.publish.MultipartUploaderMain")
+)
+
 // project definitions
 lazy val `discover-publish` = project
   .enablePlugins(sbtdocker.DockerPlugin)
@@ -266,6 +271,7 @@ lazy val `discover-publish` = project
   .settings(commonSettings: _*)
   .settings(coreSettings: _*)
   .settings(discoverPublishSettings: _*)
+  .settings(multipartUploaderMain: _*)
 
 lazy val root = (project in file("."))
   .aggregate(
