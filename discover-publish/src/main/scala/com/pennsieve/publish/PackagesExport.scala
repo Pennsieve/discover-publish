@@ -169,7 +169,8 @@ object PackagesExport extends LazyLogging {
               fileType = action.file.fileType,
               sourcePackageId = Some(action.pkg.nodeId),
               id = Some(action.file.uuid),
-              s3VersionId = action.s3VersionId
+              s3VersionId = action.s3VersionId,
+              sha256 = action.sha256
             ) :: accum
           case _ => accum // do nothing
         }
