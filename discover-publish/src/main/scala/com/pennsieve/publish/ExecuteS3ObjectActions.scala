@@ -99,7 +99,11 @@ object ExecuteS3ObjectActions extends LazyLogging {
     for {
       completedCopy <- completedCopyF
       _ = logCopyResult(copyAction)
-    } yield (copyAction.copy(s3VersionId = Some(completedCopy.versionId)))
+    } yield
+      (copyAction.copy(
+        s3VersionId = Some(completedCopy.versionId),
+        sha256 = Some(completedCopy.sha256)
+      ))
   }
 
   def deleteFile(
