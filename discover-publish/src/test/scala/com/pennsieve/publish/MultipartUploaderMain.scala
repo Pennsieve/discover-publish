@@ -26,17 +26,34 @@ import scala.concurrent.Await
 import scala.concurrent.duration.{ Duration, FiniteDuration, SECONDS }
 import scala.concurrent.ExecutionContext.Implicits.global
 
+sealed trait MultipartOperation
+object MultipartOperation {
+  case object COPY extends MultipartOperation
+  case object UPLOAD extends MultipartOperation
+  case object INVALID extends MultipartOperation
+
+  def fromString(string: String): MultipartOperation =
+    string.toUpperCase() match {
+      case "COPY" => MultipartOperation.COPY
+      case "UPLOAD" => MultipartOperation.UPLOAD
+      case _ => MultipartOperation.INVALID
+    }
+}
+
 case class Settings(
+  action: MultipartOperation = MultipartOperation.INVALID,
   region: Region = Settings.DEFAULT_REGION,
   maxPartSize: Long = Settings.MAX_PART_SIZE,
   maxWaitTime: Duration = Settings.MAX_WAIT_TIME,
-  sourceBucket: String = Settings.UNKNOWN,
-  sourceKey: String = Settings.UNKNOWN,
-  destinationBucket: String = Settings.UNKNOWN,
-  destinationKey: String = Settings.UNKNOWN
+  sourceBucket: Option[String] = None,
+  sourceKey: Option[String] = None,
+  destinationBucket: Option[String] = None,
+  destinationKey: Option[String] = None
 ) {
   def withSetting(name: String, value: String): Settings =
     name match {
+      case "--action" =>
+        this.copy(action = MultipartOperation.fromString(value))
       case "--region" =>
         this.copy(region = Region.of(value))
       case "--maxPartSize" =>
@@ -46,20 +63,19 @@ case class Settings(
           maxWaitTime = FiniteDuration(Duration(value).toSeconds, SECONDS)
         )
       case "--sourceBucket" =>
-        this.copy(sourceBucket = value)
+        this.copy(sourceBucket = Some(value))
       case "--sourceKey" =>
-        this.copy(sourceKey = value)
+        this.copy(sourceKey = Some(value))
       case "--destinationBucket" =>
-        this.copy(destinationBucket = value)
+        this.copy(destinationBucket = Some(value))
       case "--destinationKey" =>
-        this.copy(destinationKey = value)
+        this.copy(destinationKey = Some(value))
       case _ => // ignore any unrecognized names
         this
     }
 }
 
 object Settings {
-  val UNKNOWN = "unknown"
   val DEFAULT_REGION: Region = Region.US_EAST_1
   val MAX_PART_SIZE: Long = 50 * 1024 * 1024
   val MAX_WAIT_TIME: FiniteDuration = Duration(60, TimeUnit.MINUTES)
@@ -87,27 +103,53 @@ object MultipartUploaderMain {
       .build
   }
 
-  def copyRequest(settings: Settings) =
-    CopyRequest(
-      sourceBucket = settings.sourceBucket,
-      sourceKey = settings.sourceKey,
-      destinationBucket = settings.destinationBucket,
-      destinationKey = settings.destinationKey
-    )
+  def copyRequest(settings: Settings): Option[CopyRequest] =
+    (
+      settings.sourceBucket,
+      settings.sourceKey,
+      settings.destinationBucket,
+      settings.destinationKey
+    ) match {
+      case (
+          Some(sourceBucket: String),
+          Some(sourceKey: String),
+          Some(destinationBucket: String),
+          Some(destinationKey: String)
+          ) =>
+        Some(
+          CopyRequest(
+            sourceBucket = sourceBucket,
+            sourceKey = sourceKey,
+            destinationBucket = destinationBucket,
+            destinationKey = destinationKey
+          )
+        )
+      case (_, _, _, _) => None
+    }
+
+  def copy(settings: Settings): Unit =
+    copyRequest(settings) match {
+      case Some(request: CopyRequest) =>
+        val result = Await.result(
+          MultipartUploader(s3Client(settings.region), settings.maxPartSize)
+            .copy(request),
+          settings.maxWaitTime
+        )
+        println(s"result: ${result}")
+      case None =>
+        println("invalid copy request")
+    }
 
   def main(args: Array[String]): Unit = {
     println("MultipartUploaderMain.main()")
     val settings = Settings.fromArgs(args.toList, Settings())
     println(settings)
 
-    val request = copyRequest(settings)
-    println(request)
-
-    val result = Await.result(
-      MultipartUploader(s3Client(settings.region), settings.maxPartSize)
-        .copy(request),
-      settings.maxWaitTime
-    )
-    println(s"result: ${result}")
+    settings.action match {
+      case MultipartOperation.COPY =>
+        copy(settings)
+      case _ =>
+        println(s"action '${settings.action}' not supported")
+    }
   }
 }
