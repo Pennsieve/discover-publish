@@ -22,75 +22,92 @@ import software.amazon.awssdk.services.s3.S3Client
 
 import java.util.concurrent.TimeUnit
 import scala.annotation.tailrec
-import scala.concurrent.{ Await, ExecutionContext }
-import scala.concurrent.duration.{ Duration, FiniteDuration }
+import scala.concurrent.Await
+import scala.concurrent.duration.{ Duration, FiniteDuration, SECONDS }
+import scala.concurrent.ExecutionContext.Implicits.global
 
-object MultipartUploaderMain {
+case class Settings(
+  region: Region = Settings.DEFAULT_REGION,
+  maxPartSize: Long = Settings.MAX_PART_SIZE,
+  maxWaitTime: Duration = Settings.MAX_WAIT_TIME,
+  sourceBucket: String = Settings.UNKNOWN,
+  sourceKey: String = Settings.UNKNOWN,
+  destinationBucket: String = Settings.UNKNOWN,
+  destinationKey: String = Settings.UNKNOWN
+) {
+  def withSetting(name: String, value: String): Settings =
+    name match {
+      case "--region" =>
+        this.copy(region = Region.of(value))
+      case "--maxPartSize" =>
+        this.copy(maxPartSize = value.toLong)
+      case "--maxWaitTime" =>
+        this.copy(
+          maxWaitTime = FiniteDuration(Duration(value).toSeconds, SECONDS)
+        )
+      case "--sourceBucket" =>
+        this.copy(sourceBucket = value)
+      case "--sourceKey" =>
+        this.copy(sourceKey = value)
+      case "--destinationBucket" =>
+        this.copy(destinationBucket = value)
+      case "--destinationKey" =>
+        this.copy(destinationKey = value)
+      case _ => // ignore any unrecognized names
+        this
+    }
+}
+
+object Settings {
   val UNKNOWN = "unknown"
+  val DEFAULT_REGION: Region = Region.US_EAST_1
   val MAX_PART_SIZE: Long = 50 * 1024 * 1024
   val MAX_WAIT_TIME: FiniteDuration = Duration(60, TimeUnit.MINUTES)
 
-  implicit val ec: ExecutionContext =
-    scala.concurrent.ExecutionContext.Implicits.global
+  def apply(): Settings = new Settings()
 
-  def s3Client(settings: Map[String, String]): S3Client = {
-    val region = settings.get("--region") match {
-      case Some(region) => Region.of(region)
-      case None => Region.US_EAST_1
+  @tailrec
+  def fromArgs(args: List[String], settings: Settings): Settings = {
+    args match {
+      case h :: t =>
+        Settings.fromArgs(t.drop(1), settings.withSetting(h, t(0)))
+      case _ =>
+        settings
     }
+  }
+}
 
+object MultipartUploaderMain {
+
+  def s3Client(region: Region): S3Client = {
     val sharedHttpClient = UrlConnectionHttpClient.builder().build()
-
     S3Client.builder
       .region(region)
       .httpClient(sharedHttpClient)
       .build
   }
 
-  def maxPartSize(settings: Map[String, String]): Long =
-    settings.get("--maxPartSize") match {
-      case Some(value) => value.toLong
-      case None => MAX_PART_SIZE
-    }
-
-  @tailrec
-  def parseArgs(
-    args: List[String],
-    accum: Map[String, String]
-  ): Map[String, String] = {
-    args match {
-      case h :: t =>
-        parseArgs(t.drop(1), accum + (h -> t(0)))
-      case _ =>
-        accum
-    }
-  }
-
-  def copyRequest(settings: Map[String, String]) =
+  def copyRequest(settings: Settings) =
     CopyRequest(
-      source = ObjectIdentity(
-        bucket = settings.getOrElse("--sourceBucket", UNKNOWN),
-        key = settings.getOrElse("--sourceKey", UNKNOWN)
-      ),
-      destination = ObjectIdentity(
-        bucket = settings.getOrElse("--destinationBucket", UNKNOWN),
-        key = settings.getOrElse("--destinationKey", UNKNOWN)
-      )
+      sourceBucket = settings.sourceBucket,
+      sourceKey = settings.sourceKey,
+      destinationBucket = settings.destinationBucket,
+      destinationKey = settings.destinationKey
     )
 
   def main(args: Array[String]): Unit = {
     println("MultipartUploaderMain.main()")
-    val settings = parseArgs(args.toList, Map.empty)
+    val settings = Settings.fromArgs(args.toList, Settings())
     println(settings)
 
     val request = copyRequest(settings)
     println(request)
 
-    val s3 = s3Client(settings)
-    val partSize = maxPartSize(settings)
-    val multipartUploader = MultipartUploader(s3, partSize)
-    val resultF = multipartUploader.copy(request)
-    val result = Await.result(resultF, MAX_WAIT_TIME)
+    val result = Await.result(
+      MultipartUploader(s3Client(settings.region), settings.maxPartSize)
+        .copy(request),
+      settings.maxWaitTime
+    )
     println(s"result: ${result}")
   }
 }
