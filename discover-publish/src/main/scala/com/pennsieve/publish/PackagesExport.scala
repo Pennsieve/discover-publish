@@ -71,9 +71,8 @@ object PackagesExport extends LazyLogging {
     implicit val publishContainer: PublishContainer = container
     logger.info("exporting package sources (for 5x)")
 
-    // TODO: get `maxPartSize` from config
     val multipartUploader =
-      MultipartUploader(container.s3Client, 5 * 1024 * 1024 * 1024)
+      MultipartUploader(container.s3Client, container.s3CopyChunkSize)
 
     // get all Packages and transform into PackageFile and FileManifest
     val (currentPackageFileListF, currentFileManifestsF) = PackagesSource()
@@ -159,7 +158,8 @@ object PackagesExport extends LazyLogging {
               fileType = action.file.fileType,
               sourcePackageId = Some(action.pkg.nodeId),
               id = Some(action.file.uuid),
-              s3VersionId = action.s3VersionId
+              s3VersionId = action.s3VersionId,
+              sha256 = action.sha256
             ) :: accum
           case action: KeepAction =>
             FileManifest(
@@ -169,7 +169,8 @@ object PackagesExport extends LazyLogging {
               fileType = action.file.fileType,
               sourcePackageId = Some(action.pkg.nodeId),
               id = Some(action.file.uuid),
-              s3VersionId = action.s3VersionId
+              s3VersionId = action.s3VersionId,
+              sha256 = action.sha256
             ) :: accum
           case _ => accum // do nothing
         }

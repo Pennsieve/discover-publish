@@ -60,7 +60,7 @@ lazy val swaggerAkkaHttpVersion = "1.5.2"
 
 lazy val auditMiddlewareVersion = "1.0.3"
 lazy val authMiddlewareVersion = "5.1.3"
-lazy val coreVersion = "320-6ebbec2"
+lazy val coreVersion = "322-4a81ebb"
 
 lazy val awsVersion = "1.11.931"
 lazy val awsV2Version = "2.25.19"
@@ -259,6 +259,11 @@ lazy val discoverPublishSettings = Seq(
   assembly / assemblyMergeStrategy := defaultMergeStrategy.value
 )
 
+lazy val multipartUploaderMain = Seq(
+  name := "multipart-uploader",
+  Compile / run / mainClass := Some("com.pennsieve.publish.MultipartUploaderMain")
+)
+
 // project definitions
 lazy val `discover-publish` = project
   .enablePlugins(sbtdocker.DockerPlugin)
@@ -266,6 +271,7 @@ lazy val `discover-publish` = project
   .settings(commonSettings: _*)
   .settings(coreSettings: _*)
   .settings(discoverPublishSettings: _*)
+  .settings(multipartUploaderMain: _*)
 
 lazy val root = (project in file("."))
   .aggregate(

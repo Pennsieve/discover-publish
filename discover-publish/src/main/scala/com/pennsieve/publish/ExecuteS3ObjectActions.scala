@@ -84,7 +84,7 @@ object ExecuteS3ObjectActions extends LazyLogging {
       .info(s"Copying ${fromUrl(copyAction)} to ${toUrl(copyAction)}")
 
     val completedCopyF = multipartUploader.copy(
-      UploadRequest(
+      CopyRequest(
         sourceBucket = copyAction.file.s3Bucket,
         sourceKey = copyAction.file.s3Key,
         destinationBucket = copyAction.toBucket,
@@ -95,7 +95,11 @@ object ExecuteS3ObjectActions extends LazyLogging {
     for {
       completedCopy <- completedCopyF
       _ = logCopyResult(copyAction)
-    } yield (copyAction.copy(s3VersionId = Some(completedCopy.versionId)))
+    } yield
+      (copyAction.copy(
+        s3VersionId = Some(completedCopy.versionId),
+        sha256 = Some(completedCopy.sha256)
+      ))
   }
 
   def deleteFile(

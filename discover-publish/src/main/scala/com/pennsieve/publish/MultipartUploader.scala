@@ -33,14 +33,14 @@ import scala.annotation.tailrec
 import scala.concurrent.{ ExecutionContext, Future }
 import scala.jdk.CollectionConverters._
 
-case class UploadRequest(
+case class CopyRequest(
   sourceBucket: String,
   sourceKey: String,
   destinationBucket: String,
   destinationKey: String
 )
 
-case class CompletedUpload(
+case class CompletedRequest(
   bucket: String,
   key: String,
   versionId: String,
@@ -48,13 +48,15 @@ case class CompletedUpload(
   sha256: String
 )
 
+case class FinishedParts(versionId: String, eTag: String, sha256: String)
+
 class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
 
-  private def getObjectSize(sourceBucket: String, sourceKey: String): Long = {
+  private def getObjectSize(bucket: String, key: String): Long = {
     val getObjectAttributesRequest = GetObjectAttributesRequest
       .builder()
-      .bucket(sourceBucket)
-      .key(sourceKey)
+      .bucket(bucket)
+      .key(key)
       .requestPayer(RequestPayer.REQUESTER)
       .objectAttributes(List(ObjectAttributes.OBJECT_SIZE).asJava)
       .build()
@@ -83,12 +85,12 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
         byteRange(offset, partSize) :: accumulator
       )
 
-  private def startUpload(uploadRequest: UploadRequest): String = {
+  private def start(bucket: String, key: String): String = {
     val createMultipartUploadRequest = CreateMultipartUploadRequest
       .builder()
       .checksumAlgorithm(ChecksumAlgorithm.SHA256)
-      .bucket(uploadRequest.destinationBucket)
-      .key(uploadRequest.destinationKey)
+      .bucket(bucket)
+      .key(key)
       .requestPayer(RequestPayer.REQUESTER)
       .build()
 
@@ -97,8 +99,11 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
     createMultipartUploadResponse.uploadId()
   }
 
-  private def uploadPart(
-    uploadRequest: UploadRequest,
+  private def copyPart(
+    sourceBucket: String,
+    sourceKey: String,
+    destinationBucket: String,
+    destinationKey: String,
     uploadId: String,
     index: Int,
     part: String
@@ -106,10 +111,10 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
     val uploadPartCopyRequest = UploadPartCopyRequest
       .builder()
       .uploadId(uploadId)
-      .sourceBucket(uploadRequest.sourceBucket)
-      .sourceKey(uploadRequest.sourceKey)
-      .destinationBucket(uploadRequest.destinationBucket)
-      .destinationKey(uploadRequest.destinationKey)
+      .sourceBucket(sourceBucket)
+      .sourceKey(sourceKey)
+      .destinationBucket(destinationBucket)
+      .destinationKey(destinationKey)
       .copySourceRange(part)
       .partNumber(index)
       .requestPayer(RequestPayer.REQUESTER)
@@ -129,11 +134,12 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
     (index, completedPart)
   }
 
-  private def finishUpload(
-    uploadRequest: UploadRequest,
+  private def finish(
+    bucket: String,
+    key: String,
     uploadId: String,
     completedParts: Seq[CompletedPart]
-  ): CompletedUpload = {
+  ): FinishedParts = {
     val completedMultipartUpload = CompletedMultipartUpload
       .builder()
       .parts(completedParts.asJava)
@@ -141,8 +147,8 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
 
     val completeMultipartUploadRequest = CompleteMultipartUploadRequest
       .builder()
-      .bucket(uploadRequest.destinationBucket)
-      .key(uploadRequest.destinationKey)
+      .bucket(bucket)
+      .key(key)
       .uploadId(uploadId)
       .multipartUpload(completedMultipartUpload)
       .requestPayer(RequestPayer.REQUESTER)
@@ -150,9 +156,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
 
     val completeMultipartUploadResponse =
       s3Client.completeMultipartUpload(completeMultipartUploadRequest)
-    CompletedUpload(
-      bucket = completeMultipartUploadResponse.bucket(),
-      key = completeMultipartUploadResponse.key(),
+    FinishedParts(
       versionId = completeMultipartUploadResponse.versionId(),
       eTag = completeMultipartUploadResponse.eTag(),
       sha256 = completeMultipartUploadResponse.checksumSHA256()
@@ -160,22 +164,41 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
   }
 
   def copy(
-    uploadRequest: UploadRequest
+    request: CopyRequest
   )(implicit
     ec: ExecutionContext
-  ): Future[CompletedUpload] =
+  ): Future[CompletedRequest] =
     Future {
       val objectSize =
-        getObjectSize(uploadRequest.sourceBucket, uploadRequest.sourceKey)
+        getObjectSize(request.sourceBucket, request.sourceKey)
       val partList = parts(0L, objectSize, maxPartSize, List[String]()).reverse
-      val uploadId = startUpload(uploadRequest)
-      val uploadedParts = partList.zipWithIndex.map {
+      val uploadId = start(request.destinationBucket, request.destinationKey)
+      val copiedParts = partList.zipWithIndex.map {
         case (part, index) =>
-          uploadPart(uploadRequest, uploadId, index + 1, part)
+          copyPart(
+            request.sourceBucket,
+            request.sourceKey,
+            request.destinationBucket,
+            request.destinationKey,
+            uploadId,
+            index + 1,
+            part
+          )
       }
-      val completedUpload =
-        finishUpload(uploadRequest, uploadId, uploadedParts.map(_._2))
-      completedUpload
+      val finishedParts =
+        finish(
+          request.destinationBucket,
+          request.destinationKey,
+          uploadId,
+          copiedParts.map(_._2)
+        )
+      CompletedRequest(
+        bucket = request.destinationBucket,
+        key = request.destinationKey,
+        versionId = finishedParts.versionId,
+        eTag = finishedParts.eTag,
+        sha256 = finishedParts.sha256
+      )
     }
 }
 
