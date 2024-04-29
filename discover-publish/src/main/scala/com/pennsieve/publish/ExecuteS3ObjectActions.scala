@@ -94,7 +94,7 @@ object ExecuteS3ObjectActions extends LazyLogging {
 
     for {
       completedCopy <- completedCopyF
-      _ = logCopyResult(copyAction)
+      _ = logCopyResult(completedCopy, copyAction)
     } yield
       (copyAction.copy(
         s3VersionId = Some(completedCopy.versionId),
@@ -155,11 +155,14 @@ object ExecuteS3ObjectActions extends LazyLogging {
     s"s3://${action.bucket}/${action.baseKey}/${action.fileKey}"
 
   private def logCopyResult(
+    completedCopy: CompletedRequest,
     action: CopyAction
   )(implicit
     ec: ExecutionContext
   ): Unit =
-    logger.info(s"Done copying ${fromUrl(action)} to ${toUrl(action)}")
+    logger.info(
+      s"Done copying ${fromUrl(action)} to ${toUrl(action)} completedCopy: ${completedCopy}"
+    )
 
   private def logDeleteComplete(
     action: DeleteAction
