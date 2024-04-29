@@ -16,6 +16,7 @@
 
 package com.pennsieve.publish
 
+import com.typesafe.scalalogging.LazyLogging
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.{
   ChecksumAlgorithm,
@@ -50,7 +51,8 @@ case class CompletedRequest(
 
 case class FinishedParts(versionId: String, eTag: String, sha256: String)
 
-class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
+class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
+    extends LazyLogging {
 
   private def getObjectSize(bucket: String, key: String): Long = {
     val getObjectAttributesRequest = GetObjectAttributesRequest
@@ -60,9 +62,14 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
       .requestPayer(RequestPayer.REQUESTER)
       .objectAttributes(List(ObjectAttributes.OBJECT_SIZE).asJava)
       .build()
-    val getObjectAttributesResponse =
+    val getObjectAttributesResponse = {
       s3Client.getObjectAttributes(getObjectAttributesRequest)
-    getObjectAttributesResponse.objectSize()
+    }
+    val objectSize = getObjectAttributesResponse.objectSize()
+    logger.info(
+      s"MultipartUploader.getObjectSize() bucket: ${bucket} key: ${key} objectSize: ${objectSize}"
+    )
+    objectSize
   }
 
   private def byteRange(offset: Long, size: Long): String =
@@ -169,10 +176,15 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
     ec: ExecutionContext
   ): Future[CompletedRequest] =
     Future {
+      logger.info(s"MultipartUploader.copy() request: ${request}")
+      val startTime = System.nanoTime()
       val objectSize =
         getObjectSize(request.sourceBucket, request.sourceKey)
       val partList = parts(0L, objectSize, maxPartSize, List[String]()).reverse
       val uploadId = start(request.destinationBucket, request.destinationKey)
+      logger.info(
+        s"MultipartUploader.copy() uploadId: ${uploadId} numberOfParts: ${partList.length}"
+      )
       val copiedParts = partList.zipWithIndex.map {
         case (part, index) =>
           copyPart(
@@ -192,13 +204,18 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long) {
           uploadId,
           copiedParts.map(_._2)
         )
-      CompletedRequest(
+      val completedRequest = CompletedRequest(
         bucket = request.destinationBucket,
         key = request.destinationKey,
         versionId = finishedParts.versionId,
         eTag = finishedParts.eTag,
         sha256 = finishedParts.sha256
       )
+      val finishTime = System.nanoTime()
+      logger.info(
+        s"MultipartUploader.copy() elapsed: ${finishTime - startTime} completedRequest: ${completedRequest}"
+      )
+      completedRequest
     }
 }
 
