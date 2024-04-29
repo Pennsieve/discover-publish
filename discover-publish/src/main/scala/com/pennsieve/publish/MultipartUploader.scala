@@ -115,6 +115,9 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     index: Int,
     part: String
   ): (Int, CompletedPart) = {
+    logger.info(
+      s"MultipartUploader.copyPart() uploadId: ${uploadId} index: ${index} part: ${part}"
+    )
     val uploadPartCopyRequest = UploadPartCopyRequest
       .builder()
       .uploadId(uploadId)
