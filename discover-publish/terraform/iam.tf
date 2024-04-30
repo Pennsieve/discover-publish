@@ -89,7 +89,12 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
   statement {
     sid     = "S3GetObject"
     effect  = "Allow"
-    actions = ["s3:GetObject"]
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectAttributes",
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAttributes"
+    ]
 
     resources = [
       data.terraform_remote_state.platform_infrastructure.outputs.discover_pgdump_bucket_arn,
@@ -126,6 +131,8 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
     sid = "S3GetObjectVersion"
     effect = "Allow"
     actions = [
+      "s3:GetObject",
+      "s3:GetObjectAttributes",
       "s3:GetObjectVersion",
       "s3:GetObjectVersionAttributes"
     ]
