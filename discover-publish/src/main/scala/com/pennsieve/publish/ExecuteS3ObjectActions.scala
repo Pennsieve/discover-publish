@@ -93,7 +93,11 @@ object ExecuteS3ObjectActions extends LazyLogging {
     )
 
     for {
-      completedCopy <- completedCopyF
+      completedCopy <- completedCopyF.recoverWith {
+        case t: Throwable =>
+          logger.error(s"MultipartUploader.copy() exception: ${t}")
+          Future.failed(t)
+      }
       _ = logCopyResult(completedCopy, copyAction)
     } yield
       (copyAction.copy(
