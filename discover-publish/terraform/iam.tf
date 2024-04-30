@@ -125,7 +125,10 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
   statement {
     sid = "S3GetObjectVersion"
     effect = "Allow"
-    actions = ["s3:GetObjectVersion"]
+    actions = [
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAttributes"
+    ]
 
     resources = [
       data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn,
