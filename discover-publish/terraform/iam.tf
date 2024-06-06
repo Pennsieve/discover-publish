@@ -61,9 +61,8 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       "ssm:GetParametersByPath",
     ]
 
-    resources = [
-      "arn:aws:ssm:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment_name}/${var.service_name}-${var.tier}/*"
-    ]
+    resources =
+      ["arn:aws:ssm:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment_name}/${var.service_name}-${var.tier}/*"]
   }
 
   statement {
@@ -85,9 +84,8 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
     sid       = "KMSDecryptSSMSecrets"
     effect    = "Allow"
     actions   = ["kms:*"]
-    resources = [
-      "arn:aws:kms:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:key/alias/aws/ssm"
-    ]
+    resources =
+      ["arn:aws:kms:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:key/alias/aws/ssm"]
   }
 
   statement {
