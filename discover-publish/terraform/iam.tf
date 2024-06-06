@@ -61,7 +61,9 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       "ssm:GetParametersByPath",
     ]
 
-    resources = ["arn:aws:ssm:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment_name}/${var.service_name}-${var.tier}/*"]
+    resources = [
+      "arn:aws:ssm:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment_name}/${var.service_name}-${var.tier}/*"
+    ]
   }
 
   statement {
@@ -83,7 +85,9 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
     sid       = "KMSDecryptSSMSecrets"
     effect    = "Allow"
     actions   = ["kms:*"]
-    resources = ["arn:aws:kms:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:key/alias/aws/ssm"]
+    resources = [
+      "arn:aws:kms:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:key/alias/aws/ssm"
+    ]
   }
 
   statement {
@@ -103,16 +107,8 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       "${data.terraform_remote_state.platform_infrastructure.outputs.storage_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.sparc_storage_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_storage_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.dataset_assets_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.dataset_assets_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo_bucket_arn}/*",
       data.terraform_remote_state.upload_service_v2.outputs.uploads_bucket_arn,
       "${data.terraform_remote_state.upload_service_v2.outputs.uploads_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn,
@@ -139,35 +135,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
     ]
   }
 
-  statement {
-    sid = "S3GetObjectVersion"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:GetObjectAttributes",
-      "s3:GetObjectVersion",
-      "s3:GetObjectVersionAttributes"
-    ]
-
-    resources = [
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo50_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo50_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.rejoin_publish50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.rejoin_publish50_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.rejoin_embargo50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.rejoin_embargo50_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*",
-    ]
-  }
 
   statement {
     sid     = "S3PutObject"
@@ -175,16 +142,8 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
     actions = ["s3:PutObject"]
 
     resources = [
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.discover_s3_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.discover_s3_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo50_bucket_arn,
@@ -210,10 +169,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
     actions = ["s3:ListBucket"]
 
     resources = [
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_bucket_arn,
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo_bucket_arn,
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish_bucket_arn,
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo_bucket_arn,
       data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn,
       data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo50_bucket_arn,
       data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn,
@@ -248,14 +203,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
     actions = ["s3:DeleteObject"]
 
     resources = [
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.discover_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.discover_embargo50_bucket_arn,
