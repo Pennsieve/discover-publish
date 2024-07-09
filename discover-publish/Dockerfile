@@ -9,7 +9,7 @@ RUN python3 -m venv /opt/venv
 
 ENV PATH="/opt/venv/bin:$PATH"
 
-RUN . /opt/venv/bin/activate && \
+RUN source /opt/venv/bin/activate && \
     pip install --upgrade pip && \
     pip install awscli==1.33.20 && \
     aws --version
