@@ -4,8 +4,7 @@ Global / cancelable := true
 ThisBuild / resolvers ++= Seq(
   "Pennsieve Releases" at "https://nexus.pennsieve.cc/repository/maven-releases",
   "Pennsieve Snapshots" at "https://nexus.pennsieve.cc/repository/maven-snapshots",
-  Resolver.sonatypeRepo("snapshots")
-)
+) ++ Resolver.sonatypeOssRepos("snapshots")
 
 ThisBuild / credentials += Credentials(
   "Sonatype Nexus Repository Manager",
