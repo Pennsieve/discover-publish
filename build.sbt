@@ -4,8 +4,7 @@ Global / cancelable := true
 ThisBuild / resolvers ++= Seq(
   "Pennsieve Releases" at "https://nexus.pennsieve.cc/repository/maven-releases",
   "Pennsieve Snapshots" at "https://nexus.pennsieve.cc/repository/maven-snapshots",
-  Resolver.sonatypeRepo("snapshots")
-)
+) ++ Resolver.sonatypeOssRepos("snapshots")
 
 ThisBuild / credentials += Credentials(
   "Sonatype Nexus Repository Manager",
@@ -18,7 +17,7 @@ ThisBuild / credentials += Credentials(
 // See https://app.clickup.com/t/a8ned9
 ThisBuild / useCoursier := false
 
-ThisBuild / scalaVersion := "2.13.13"
+ThisBuild / scalaVersion := "2.13.14"
 ThisBuild / organization := "com.pennsieve"
 ThisBuild / organizationName := "University of Pennsylvania"
 ThisBuild / licenses := List(
@@ -60,7 +59,7 @@ lazy val swaggerAkkaHttpVersion = "1.5.2"
 
 lazy val auditMiddlewareVersion = "1.0.3"
 lazy val authMiddlewareVersion = "5.1.3"
-lazy val coreVersion = "322-4a81ebb"
+lazy val coreVersion = "344-326ef90"
 
 lazy val awsVersion = "1.11.931"
 lazy val awsV2Version = "2.25.19"

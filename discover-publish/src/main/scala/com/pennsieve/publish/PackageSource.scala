@@ -18,20 +18,12 @@ package com.pennsieve.publish
 
 import akka.NotUsed
 import akka.stream.scaladsl.Source
-import cats.data._
-import cats.implicits._
-import com.pennsieve.models.Package
 import com.pennsieve.publish.models.PackagePath
-
-import scala.collection.mutable
-import scala.collection.mutable.Stack
 import scala.concurrent.{ ExecutionContext, Future }
+import scala.collection.mutable.Stack
 
 /**
   * Source that emits all the packages in a dataset.
-  *
-  * Maintains an internal stack containing the children of packages that have
-  * already been sent.
   */
 object PackagesSource {
 
@@ -40,63 +32,32 @@ object PackagesSource {
     container: PublishContainer,
     ec: ExecutionContext
   ): Source[PackagePath, NotUsed] =
-    // Initialize the state for unfolding using the packages at the top level
-    // of the dataset.
     Source
       .future(
         container.packageManager
-          .children(None, container.dataset)
+          .exportAll(container.dataset)
           .value
           .flatMap {
             case Left(e) => Future.failed(e)
-            case Right(children) => Future.successful(children)
+            case Right(packages) =>
+              Future.successful(packages.map(p => (p._1, p._2)))
           }
       )
-      // Pass the top level packages into a substream that traverses the
-      // package tree by maintaining a stack of packages to be emitted
       .flatMapConcat(
-        children =>
+        packages =>
           Source
-            .unfoldAsync(UnfoldState(children))(getNextPackage)
+            .unfoldAsync(UnfoldState(new Stack() ++ packages))(emitPackage)
       )
 
-  /**
-    * Return the next package to emit in the stream, adding the children of
-    * the package to the stack.
-    */
-  def getNextPackage(
+  private def emitPackage(
     state: UnfoldState
-  )(implicit
-    container: PublishContainer,
-    ec: ExecutionContext
   ): Future[Option[(UnfoldState, PackagePath)]] =
     if (state.stack.isEmpty)
-      Future.successful(None) // Done. Shutdown the stream
+      Future.successful(None)
     else {
-      val (parent, path) = state.stack.pop()
-      container.packageManager
-        .children(Some(parent), container.dataset)
-        .map(
-          children =>
-            state.copy(
-              stack = state.stack ++ children
-                .map(pkg => (pkg, path :+ parent.name))
-            )
-        )
-        .value
-        .flatMap {
-          case Left(e) => Future.failed(e)
-          case Right(state) => Future.successful(Some((state, (parent, path))))
-        }
+      val (pkg, path) = state.stack.pop()
+      Future.successful(Some((state, (pkg, path))))
     }
 
-  /**
-    * Accumulator state for unfold traversal
-    */
-  case class UnfoldState(stack: Stack[PackagePath])
-
-  object UnfoldState {
-    def apply(packages: List[Package]): UnfoldState =
-      UnfoldState(new Stack() ++ packages.map(pkg => (pkg, Seq[String]())))
-  }
+  private case class UnfoldState(stack: Stack[PackagePath])
 }
