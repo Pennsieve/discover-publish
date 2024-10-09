@@ -302,8 +302,8 @@ data "aws_iam_policy_document" "sfn_state_machine_iam_policy_document" {
     ]
 
     resources = [
-      local.discover_publish_task_definition_family,
-      local.model_publish_task_definition_family,
+      local.discover_publish_task_definition_arn_wildcard_version,
+      local.model_publish_task_definition_arn_wildcard_version,
     ]
   }
 
