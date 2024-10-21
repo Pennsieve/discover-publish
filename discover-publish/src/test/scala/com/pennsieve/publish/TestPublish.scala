@@ -527,6 +527,92 @@ class TestPublish
       decode[DatasetMetadata](sampleMetadataV4) shouldBe Right(mdV4)
     }
 
+    "decode V5.0 metadata from JSON" in {
+      val sampleMetadataV5 =
+        """{
+        "pennsieveDatasetId": 1,
+        "version": 1,
+        "revision": 1,
+        "name" : "Test Dataset",
+        "description" : "Lorem ipsum",
+        "creator" : { "first_name": "Blaise", "last_name": "Pascal", "orcid": "0000-0009-1234-5678"},
+        "contributors" : [  { "first_name": "Isaac", "last_name": "Newton"}, { "first_name": "Albert", "last_name": "Einstein"}],
+        "sourceOrganization" : "1",
+        "keywords" : [
+        "neuro",
+        "neuron"
+        ],
+        "datePublished": "2019-06-05",
+        "license": "MIT",
+        "@id": "10.21397/jlt1-xdqn",
+        "publisher" : "The University of Pennsylvania",
+        "@context" : "http://purl.org/dc/terms",
+        "@type":"Dataset",
+        "schemaVersion": "http://schema.org/version/3.7/",
+        "collections" : [
+          {
+            "name" : "My great collection"
+          }
+        ],
+        "relatedPublications" : [
+          {
+            "doi" : "10.26275/t6j6-77pu",
+            "relationshipType" : "IsDescribedBy"
+          }
+        ],
+        "files" : [
+          {
+            "path" : "packages/brain.dcm",
+            "size" : 15010,
+            "fileType" : "DICOM",
+            "sourcePackageId" : "N:package:1"
+          }
+        ],
+        "pennsieveSchemaVersion" : "5.0"
+        }"""
+
+      val mdV5 = DatasetMetadataV5_0(
+        pennsieveDatasetId = 1,
+        version = 1,
+        revision = Some(1),
+        name = "Test Dataset",
+        description = "Lorem ipsum",
+        creator =
+          PublishedContributor("Blaise", "Pascal", Some("0000-0009-1234-5678")),
+        contributors = List(
+          PublishedContributor("Isaac", "Newton", None),
+          PublishedContributor("Albert", "Einstein", None)
+        ),
+        sourceOrganization = "1",
+        keywords = List("neuro", "neuron"),
+        datePublished = LocalDate.of(2019, 6, 5),
+        license = Some(License.MIT),
+        `@id` = "10.21397/jlt1-xdqn",
+        `@context` = "http://purl.org/dc/terms",
+        files = List(
+          FileManifest(
+            "packages/brain.dcm",
+            15010,
+            FileType.DICOM,
+            Some("N:package:1")
+          )
+        ),
+        collections = Some(List(PublishedCollection("My great collection"))),
+        relatedPublications = Some(
+          List(
+            PublishedExternalPublication(
+              Doi("10.26275/t6j6-77pu"),
+              Some(RelationshipType.IsDescribedBy)
+            )
+          )
+        ),
+        release = None,
+        references = None
+      )
+
+      decode[DatasetMetadata](sampleMetadataV5) shouldBe Right(mdV5)
+    }
+
     "encode contributors as objects" in {
       val contributors =
         s"""[{"id":1,"first_name":"Sally","last_name":"Mae","orcid":null}]"""
@@ -693,7 +779,7 @@ class TestPublish
         downloadFile(publishBucket, testKey + Publish.METADATA_FILENAME)
 
       decode[DatasetMetadata](metadata) shouldBe Right(
-        DatasetMetadataV4_0(
+        DatasetMetadataV5_0(
           pennsieveDatasetId = 100,
           version = 10,
           revision = None,
@@ -761,7 +847,9 @@ class TestPublish
               FileType.Json
             )
           ).sorted,
-          pennsieveSchemaVersion = "4.0"
+          pennsieveSchemaVersion = "5.0",
+          release = None,
+          references = None
         )
       )
     }
@@ -871,7 +959,7 @@ class TestPublish
         downloadFile(embargoBucket, testKey + Publish.METADATA_FILENAME)
 
       decode[DatasetMetadata](metadata) shouldBe Right(
-        DatasetMetadataV4_0(
+        DatasetMetadataV5_0(
           pennsieveDatasetId = 100,
           version = 10,
           revision = None,
@@ -939,7 +1027,9 @@ class TestPublish
               FileType.Json
             )
           ).sorted,
-          pennsieveSchemaVersion = "4.0"
+          pennsieveSchemaVersion = "5.0",
+          release = None,
+          references = None
         )
       )
     }
