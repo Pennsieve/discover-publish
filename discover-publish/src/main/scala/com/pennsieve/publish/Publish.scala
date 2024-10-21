@@ -665,7 +665,7 @@ object Publish extends StrictLogging {
     val metadataManifest =
       FileManifest(METADATA_FILENAME, METADATA_FILENAME, 0, FileType.Json)
 
-    val unsizedMetadata = DatasetMetadataV4_0(
+    val unsizedMetadata = DatasetMetadataV5_0(
       pennsieveDatasetId = containerConfig.publishedDatasetId,
       version = containerConfig.version,
       revision = None,
@@ -686,7 +686,9 @@ object Publish extends StrictLogging {
       `@id` = s"https://doi.org/${containerConfig.doi}",
       files = (metadataManifest :: manifests).sorted,
       collections = Some(containerConfig.collections),
-      relatedPublications = Some(containerConfig.externalPublications)
+      relatedPublications = Some(containerConfig.externalPublications),
+      release = None,
+      references = None
     )
 
     // Compute the size of the metadata, including the number of characters
