@@ -414,56 +414,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_iam_policy_attachment_2" {
 
 # ECS task IAM Policy Document
 data "aws_iam_policy_document" "ecs_task_iam_policy_document_2" {
-  statement {
-    sid    = "CloudwatchLogPermissions"
-    effect = "Allow"
 
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:PutDestination",
-      "logs:PutLogEvents",
-      "logs:DescribeLogStreams",
-    ]
-
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "SSMGetParameters"
-    effect = "Allow"
-
-    actions = [
-      "ssm:GetParameter",
-      "ssm:GetParameters",
-      "ssm:GetParameterHistory",
-      "ssm:GetParametersByPath",
-    ]
-
-    resources = ["arn:aws:ssm:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment_name}/${var.service_name}-${var.tier}/*"]
-  }
-
-  statement {
-    sid    = "SecretsManagerPermissions"
-    effect = "Allow"
-
-    actions = [
-      "kms:Decrypt",
-      "secretsmanager:GetSecretValue",
-    ]
-
-    resources = [
-      data.terraform_remote_state.platform_infrastructure.outputs.docker_hub_credentials_arn,
-      data.aws_kms_key.ssm_kms_key.arn,
-    ]
-  }
-
-  statement {
-    sid       = "KMSDecryptSSMSecrets"
-    effect    = "Allow"
-    actions   = ["kms:*"]
-    resources = ["arn:aws:kms:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:key/alias/aws/ssm"]
-  }
 
   statement {
     sid     = "S3GetObject"
@@ -547,19 +498,5 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document_2" {
       data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
       "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
     ]
-  }
-
-  statement {
-    sid    = "EC2Permissions"
-    effect = "Allow"
-
-    actions = [
-      "ec2:DeleteNetworkInterface",
-      "ec2:CreateNetworkInterface",
-      "ec2:AttachNetworkInterface",
-      "ec2:DescribeNetworkInterfaces",
-    ]
-
-    resources = ["*"]
   }
 }
