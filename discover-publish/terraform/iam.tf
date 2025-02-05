@@ -127,12 +127,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_storage_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_storage_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
 
     ]
   }
@@ -162,10 +156,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
       
     ]
   }
@@ -184,8 +174,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       data.terraform_remote_state.platform_infrastructure.outputs.rejoin_embargo50_bucket_arn,
       data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn,
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
       
     ]
   }
@@ -204,8 +192,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       data.terraform_remote_state.platform_infrastructure.outputs.rejoin_embargo50_bucket_arn,
       data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn,
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
     ]
   }
 
@@ -231,10 +217,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
     ]
   }
 
@@ -260,10 +242,6 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document" {
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn}/*",
-      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
-      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
     ]
   }
 
@@ -413,5 +391,175 @@ data "aws_iam_policy_document" "sfn_state_machine_iam_policy_document" {
     resources = [
       data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_kms_key_arn,
     ]
+  }
+}
+
+# The policy document is getting too large. There is a default limit of 6144 characters
+
+# It can be increased by making a request to AWS, but the most expedient way to fix is 
+# to make multiple policies and attach it to the role
+
+# Create IAM Policy
+resource "aws_iam_policy" "ecs_task_iam_policy_2" {
+  name   = "${var.environment_name}-${var.service_name}-${var.tier}-policy-${data.terraform_remote_state.vpc.outputs.aws_region_shortname}-2"
+  path   = "/"
+  policy = data.aws_iam_policy_document.ecs_task_iam_policy_document_2.json
+}
+
+# Attach IAM Policy to the same role
+resource "aws_iam_role_policy_attachment" "ecs_task_iam_policy_attachment_2" {
+  role       = aws_iam_role.ecs_task_iam_role.name
+  policy_arn = aws_iam_policy.ecs_task_iam_policy_2.arn
+}
+
+# ECS task IAM Policy Document
+data "aws_iam_policy_document" "ecs_task_iam_policy_document_2" {
+  statement {
+    sid    = "CloudwatchLogPermissions"
+    effect = "Allow"
+
+    actions = [
+      "logs:CreateLogGroup",
+      "logs:CreateLogStream",
+      "logs:PutDestination",
+      "logs:PutLogEvents",
+      "logs:DescribeLogStreams",
+    ]
+
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "SSMGetParameters"
+    effect = "Allow"
+
+    actions = [
+      "ssm:GetParameter",
+      "ssm:GetParameters",
+      "ssm:GetParameterHistory",
+      "ssm:GetParametersByPath",
+    ]
+
+    resources = ["arn:aws:ssm:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:parameter/${var.environment_name}/${var.service_name}-${var.tier}/*"]
+  }
+
+  statement {
+    sid    = "SecretsManagerPermissions"
+    effect = "Allow"
+
+    actions = [
+      "kms:Decrypt",
+      "secretsmanager:GetSecretValue",
+    ]
+
+    resources = [
+      data.terraform_remote_state.platform_infrastructure.outputs.docker_hub_credentials_arn,
+      data.aws_kms_key.ssm_kms_key.arn,
+    ]
+  }
+
+  statement {
+    sid       = "KMSDecryptSSMSecrets"
+    effect    = "Allow"
+    actions   = ["kms:*"]
+    resources = ["arn:aws:kms:${data.aws_region.current_region.name}:${data.aws_caller_identity.current.account_id}:key/alias/aws/ssm"]
+  }
+
+  statement {
+    sid     = "S3GetObject"
+    effect  = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectAttributes",
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAttributes"
+    ]
+
+    resources = [
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_storage_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_storage_bucket_arn}/*",
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn}/*",
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
+
+    ]
+  }
+
+
+  statement {
+    sid     = "S3PutObject"
+    effect  = "Allow"
+    actions = ["s3:PutObject"]
+
+    resources = [
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn}/*",
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
+      
+    ]
+  }
+
+  statement {
+    sid     = "S3ListBucket"
+    effect  = "Allow"
+    actions = ["s3:ListBucket"]
+
+    resources = [
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
+    ]
+  }
+
+  statement {
+    sid     = "S3ListBucketVersions"
+    effect  = "Allow"
+    actions = ["s3:ListBucketVersions"]
+
+    resources = [
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
+    ]
+  }
+
+  statement {
+    sid     = "S3DeleteObject"
+    effect  = "Allow"
+    actions = ["s3:DeleteObject"]
+
+    resources = [
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn}/*",
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
+    ]
+  }
+
+  statement {
+    sid     = "S3DeleteObjectVersion"
+    effect  = "Allow"
+    actions = ["s3:DeleteObjectVersion"]
+
+    resources = [
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_discover_bucket_arn}/*",
+      data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
+      "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
+    ]
+  }
+
+  statement {
+    sid    = "EC2Permissions"
+    effect = "Allow"
+
+    actions = [
+      "ec2:DeleteNetworkInterface",
+      "ec2:CreateNetworkInterface",
+      "ec2:AttachNetworkInterface",
+      "ec2:DescribeNetworkInterfaces",
+    ]
+
+    resources = ["*"]
   }
 }
