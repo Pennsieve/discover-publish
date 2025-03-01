@@ -1,8 +1,6 @@
-// CREATE TASK DEFINITION TEMPLATE
-data "template_file" "task_definition" {
-  template = file("${path.module}/task-definition.json")
-
-  vars = {
+// CREATE ECS TASK DEFINITION
+locals {
+  task_definition_vars = {
     aws_region                = data.aws_region.current_region.name
     cloudwatch_log_group_name = data.terraform_remote_state.ecs_cluster.outputs.cloudwatch_log_group_name
     docker_hub_credentials    = data.terraform_remote_state.platform_infrastructure.outputs.docker_hub_credentials_arn
@@ -30,13 +28,15 @@ data "template_file" "task_definition" {
     s3_asset_key_prefix = data.terraform_remote_state.platform_infrastructure.outputs.discover_bucket_dataset_assets_key_prefix
     s3_copy_chunk_size  = var.s3_copy_chunk_size
   }
+
+  task_definition = templatefile("${path.module}/task-definition.json", local.task_definition_vars)
 }
 
-// CREATE ECS TASK DEFINITION
 resource "aws_ecs_task_definition" "ecs_task_definition" {
   family                   = "${var.environment_name}-${var.service_name}-${var.tier}-${data.terraform_remote_state.vpc.outputs.aws_region_shortname}"
   network_mode             = "awsvpc"
-  container_definitions    = data.template_file.task_definition.rendered
+  container_definitions    = local.task_definition
+
   task_role_arn            = aws_iam_role.ecs_task_iam_role.arn
   execution_role_arn       = aws_iam_role.ecs_task_iam_role.arn
   requires_compatibilities = ["FARGATE"]
@@ -44,7 +44,7 @@ resource "aws_ecs_task_definition" "ecs_task_definition" {
   memory                   = var.task_memory
 
   depends_on = [
-    data.template_file.task_definition,
+    local.task_definition,
     aws_iam_role.ecs_task_iam_role,
   ]
 }
