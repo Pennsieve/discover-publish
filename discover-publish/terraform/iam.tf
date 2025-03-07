@@ -500,3 +500,42 @@ data "aws_iam_policy_document" "ecs_task_iam_policy_document_2" {
     ]
   }
 }
+
+#
+# AWS Open Data S3 Bucket for SPARC
+#
+resource "aws_iam_policy" "awsod_sparc_s3_policy" {
+  name   = "${var.environment_name}-${var.service_name}-${var.tier}-awsod-sparc-s3-policy-${data.terraform_remote_state.vpc.outputs.aws_region_shortname}-2"
+  path   = "/"
+  policy = data.aws_iam_policy_document.awsod_sparc_s3_policy_document.json
+}
+
+# Attach IAM Policy to the ECS Task role
+resource "aws_iam_role_policy_attachment" "awsod_sparc_s3_policy_attachment" {
+  role       = aws_iam_role.ecs_task_iam_role.name
+  policy_arn = aws_iam_policy.awsod_sparc_s3_policy.arn
+}
+
+# ECS task IAM Policy Document
+data "aws_iam_policy_document" "awsod_sparc_s3_policy_document" {
+  statement {
+    sid     = "S3Access"
+    effect  = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:GetObjectAttributes",
+      "s3:GetObjectVersion",
+      "s3:GetObjectVersionAttributes",
+      "s3:ListBucket",
+      "s3:ListBucketVersions",
+      "s3:PutObject",
+      "s3:DeleteObject",
+      "s3:DeleteObjectVersion"
+    ]
+
+    resources = [
+      data.terraform_remote_state.platform_infrastructure.outputs.awsod_sparc_publish50_bucket_arn,
+      "${data.terraform_remote_state.platform_infrastructure.outputs.awsod_sparc_publish50_bucket_arn}/*"
+    ]
+  }
+}
