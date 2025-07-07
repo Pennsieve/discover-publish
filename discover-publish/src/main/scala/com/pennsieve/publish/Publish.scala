@@ -145,7 +145,7 @@ object Publish extends StrictLogging {
       // (i.e., readme.md, banner.jpg, changelog.md, the manifest.json, and Model export files)
       previousFiles = metadata.files.filterNot(_.sourcePackageId.isEmpty).map {
         previousFile =>
-          logger.info(s"publishAssets5x() previousFile: ${previousFile}")
+          logger.debug(s"publishAssets5x() previousFile: ${previousFile}")
           previousFile
       }
 
@@ -155,6 +155,7 @@ object Publish extends StrictLogging {
         .toEitherT
 
       (externalIdToPackagePath, packageFileManifests) = packagesResult
+      _ = logger.info("publishAssets5x() packages exported")
 
       // for the banner, readme and changelog
       // the `key` is the location in the public assets bucket (for the front-end)
@@ -185,6 +186,8 @@ object Publish extends StrictLogging {
 
       // upload the asset list (all published files) to Discover S3
       _ <- uploadToS3(container, publishedAssetsKey(container), assets.asJson)
+
+      _ = logger.info("publishAssets5x() published asset list uploaded to S3")
 
     } yield ()
   }
@@ -463,6 +466,8 @@ object Publish extends StrictLogging {
         .toEitherT[Future]
         .leftMap[CoreError](ThrowableError)
 
+      _ = logger.info("banner copied")
+
     } yield
       (
         bannerPublicAssetsKey,
@@ -542,6 +547,8 @@ object Publish extends StrictLogging {
         .map(_.getContentLength())
         .toEitherT[Future]
         .leftMap[CoreError](ThrowableError)
+
+      _ = logger.info("readme copied")
 
     } yield
       (
@@ -632,6 +639,8 @@ object Publish extends StrictLogging {
         .map(_.getContentLength())
         .toEitherT[Future]
         .leftMap[CoreError](ThrowableError)
+
+      _ = logger.info("changelog copied")
 
     } yield
       (

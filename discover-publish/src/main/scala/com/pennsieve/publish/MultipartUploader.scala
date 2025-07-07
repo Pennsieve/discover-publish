@@ -66,7 +66,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       s3Client.getObjectAttributes(getObjectAttributesRequest)
     }
     val objectSize = getObjectAttributesResponse.objectSize()
-    logger.info(
+    logger.debug(
       s"MultipartUploader.getObjectSize() bucket: ${bucket} key: ${key} objectSize: ${objectSize}"
     )
     objectSize
@@ -115,7 +115,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     index: Int,
     part: String
   ): (Int, CompletedPart) = {
-    logger.info(
+    logger.debug(
       s"MultipartUploader.copyPart() uploadId: ${uploadId} index: ${index} part: ${part}"
     )
     val uploadPartCopyRequest = UploadPartCopyRequest
@@ -179,13 +179,13 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     ec: ExecutionContext
   ): Future[CompletedRequest] =
     Future {
-      logger.info(s"MultipartUploader.copy() request: ${request}")
+      logger.debug(s"MultipartUploader.copy() request: ${request}")
       val startTime = System.nanoTime()
       val objectSize =
         getObjectSize(request.sourceBucket, request.sourceKey)
       val partList = parts(0L, objectSize, maxPartSize, List[String]()).reverse
       val uploadId = start(request.destinationBucket, request.destinationKey)
-      logger.info(
+      logger.debug(
         s"MultipartUploader.copy() uploadId: ${uploadId} numberOfParts: ${partList.length}"
       )
       val copiedParts = partList.zipWithIndex.map {
@@ -215,7 +215,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
         sha256 = finishedParts.sha256
       )
       val finishTime = System.nanoTime()
-      logger.info(
+      logger.debug(
         s"MultipartUploader.copy() elapsed: ${finishTime - startTime} completedRequest: ${completedRequest}"
       )
       completedRequest

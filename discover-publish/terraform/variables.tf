@@ -17,11 +17,11 @@ variable "mount_points" {
 # Fargate task resources
 
 variable "task_memory" {
-  default = 2048
+  default = 16384
 }
 
 variable "task_cpu" {
-  default = 1024
+  default = 2048
 }
 
 # discover_publish
