@@ -81,7 +81,7 @@ object ExecuteS3ObjectActions extends LazyLogging {
     system: ActorSystem
   ): Future[CopyAction] = {
     logger
-      .info(s"Copying ${fromUrl(copyAction)} to ${toUrl(copyAction)}")
+      .debug(s"Copying ${fromUrl(copyAction)} to ${toUrl(copyAction)}")
 
     val completedCopyF = multipartUploader.copy(
       CopyRequest(
@@ -114,7 +114,7 @@ object ExecuteS3ObjectActions extends LazyLogging {
     system: ActorSystem
   ): Future[DeleteAction] = {
     logger
-      .info(s"Deleting ${deleteUrl(deleteAction)}")
+      .debug(s"Deleting ${deleteUrl(deleteAction)}")
 
     val deleteObjectF = S3
       .deleteObject(
@@ -141,7 +141,7 @@ object ExecuteS3ObjectActions extends LazyLogging {
     system: ActorSystem
   ): Future[KeepAction] = {
     logger
-      .info(s"Keeping ${keepUrl(keepAction)}")
+      .debug(s"Keeping ${keepUrl(keepAction)}")
 
     Future.successful(keepAction)
   }
@@ -164,7 +164,7 @@ object ExecuteS3ObjectActions extends LazyLogging {
   )(implicit
     ec: ExecutionContext
   ): Unit =
-    logger.info(
+    logger.debug(
       s"Done copying ${fromUrl(action)} to ${toUrl(action)} completedCopy: ${completedCopy}"
     )
 
@@ -173,5 +173,5 @@ object ExecuteS3ObjectActions extends LazyLogging {
   )(implicit
     ec: ExecutionContext
   ): Unit =
-    logger.info(s"Done deleting ${deleteUrl(action)}")
+    logger.debug(s"Done deleting ${deleteUrl(action)}")
 }

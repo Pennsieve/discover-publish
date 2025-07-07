@@ -84,13 +84,13 @@ object ComputeFileActions extends LazyLogging {
             fileKey = manifest.path,
             s3VersionId = manifest.s3VersionId
           )
-          logger.info(s"computeFileActions() action: ${action}")
+          logger.debug(s"computeFileActions() action: ${action}")
           action
       }
 
     val fileActions: Iterable[FileAction] = currentPathManifest.map {
       case (currentPath, currentManifest) =>
-        logger.info(
+        logger.debug(
           s"computeFileActions() currentPath: ${currentPath} currentManifest: ${currentManifest}"
         )
         val action = previousPathManifest.get(currentPath) match {
@@ -117,7 +117,7 @@ object ComputeFileActions extends LazyLogging {
             // whether the Package Ids match is not relevant, both resolve to copying the current file
             copyAction(currentPathToPackageFile.get(currentPath).get)
         }
-        logger.info(s"computeFileActions() action: ${action}")
+        logger.debug(s"computeFileActions() action: ${action}")
         action
     }
 

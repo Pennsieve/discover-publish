@@ -93,7 +93,7 @@ object PackagesExport extends LazyLogging {
         currentFileManifests,
         currentPackageFileList
       ).map { fileAction =>
-        logger.info(s"exportPackageSources5x() fileAction: ${fileAction}")
+        logger.debug(s"exportPackageSources5x() fileAction: ${fileAction}")
         fileAction
       }
 
