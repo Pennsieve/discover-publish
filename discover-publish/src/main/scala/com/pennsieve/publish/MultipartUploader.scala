@@ -17,12 +17,15 @@
 package com.pennsieve.publish
 
 import com.typesafe.scalalogging.LazyLogging
+import enumeratum.EnumEntry.UpperSnakecase
+import enumeratum._
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.{
   ChecksumAlgorithm,
   CompleteMultipartUploadRequest,
   CompletedMultipartUpload,
   CompletedPart,
+  CopyObjectRequest,
   CreateMultipartUploadRequest,
   GetObjectAttributesRequest,
   ObjectAttributes,
@@ -33,6 +36,15 @@ import software.amazon.awssdk.services.s3.model.{
 import scala.annotation.tailrec
 import scala.concurrent.{ ExecutionContext, Future }
 import scala.jdk.CollectionConverters._
+
+sealed trait CopyOperation extends EnumEntry with UpperSnakecase
+
+object CopyOperation extends Enum[CopyOperation] with CirceEnum[CopyOperation] {
+  val values: IndexedSeq[CopyOperation] = findValues
+
+  case object SinglePartCopy extends CopyOperation
+  case object MultipartCopy extends CopyOperation
+}
 
 case class CopyRequest(
   sourceBucket: String,
@@ -53,6 +65,8 @@ case class FinishedParts(versionId: String, eTag: String, sha256: String)
 
 class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     extends LazyLogging {
+
+  val SinglePartCopyThreshold: Long = 5 * 1024 * 1024 * 1024
 
   private def getObjectSize(bucket: String, key: String): Long = {
     val getObjectAttributesRequest = GetObjectAttributesRequest
@@ -173,20 +187,17 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     )
   }
 
-  def copy(
+  def multipartCopy(
+    objectSize: Long,
     request: CopyRequest
   )(implicit
     ec: ExecutionContext
   ): Future[CompletedRequest] =
     Future {
-      logger.debug(s"MultipartUploader.copy() request: ${request}")
-      val startTime = System.nanoTime()
-      val objectSize =
-        getObjectSize(request.sourceBucket, request.sourceKey)
       val partList = parts(0L, objectSize, maxPartSize, List[String]()).reverse
       val uploadId = start(request.destinationBucket, request.destinationKey)
       logger.debug(
-        s"MultipartUploader.copy() uploadId: ${uploadId} numberOfParts: ${partList.length}"
+        s"MultipartUploader.multipartCopy() uploadId: ${uploadId} numberOfParts: ${partList.length}"
       )
       val copiedParts = partList.zipWithIndex.map {
         case (part, index) =>
@@ -207,19 +218,80 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
           uploadId,
           copiedParts.map(_._2)
         )
-      val completedRequest = CompletedRequest(
+
+      CompletedRequest(
         bucket = request.destinationBucket,
         key = request.destinationKey,
         versionId = finishedParts.versionId,
         eTag = finishedParts.eTag,
         sha256 = finishedParts.sha256
       )
-      val finishTime = System.nanoTime()
-      logger.debug(
+    }
+
+  private def singlePartCopy(
+    request: CopyRequest
+  )(implicit
+    ec: ExecutionContext
+  ): Future[CompletedRequest] = Future {
+    logger.debug(
+      s"MultipartUploader.singlePartCopy() ${request.sourceBucket}/${request.sourceKey} -> ${request.destinationBucket}/${request.destinationKey}"
+    )
+
+    val copyObjectRequest = CopyObjectRequest
+      .builder()
+      .sourceBucket(request.sourceBucket)
+      .sourceKey(request.sourceKey)
+      .destinationBucket(request.destinationBucket)
+      .destinationKey(request.destinationKey)
+      .requestPayer(RequestPayer.REQUESTER)
+      .checksumAlgorithm(ChecksumAlgorithm.SHA256)
+      .build()
+
+    val copyObjectResponse = s3Client.copyObject(copyObjectRequest)
+    val copyObjectResult = copyObjectResponse.copyObjectResult()
+
+    CompletedRequest(
+      bucket = request.destinationBucket,
+      key = request.destinationKey,
+      versionId = copyObjectResponse.versionId(),
+      eTag = copyObjectResult.eTag(),
+      sha256 = copyObjectResult.checksumSHA256()
+    )
+  }
+
+  private def copyOperation(objectSize: Long): CopyOperation =
+    if (objectSize >= SinglePartCopyThreshold) {
+      CopyOperation.MultipartCopy
+    } else {
+      CopyOperation.SinglePartCopy
+    }
+
+  def copy(
+    request: CopyRequest
+  )(implicit
+    ec: ExecutionContext
+  ): Future[CompletedRequest] = {
+    logger.debug(s"MultipartUploader.copy() request: ${request}")
+
+    val startTime = System.nanoTime()
+    val objectSize =
+      getObjectSize(request.sourceBucket, request.sourceKey)
+
+    val completedRequestF = copyOperation(objectSize) match {
+      case CopyOperation.SinglePartCopy => singlePartCopy(request)
+      case CopyOperation.MultipartCopy => multipartCopy(objectSize, request)
+    }
+
+    for {
+      completedRequest <- completedRequestF
+
+      finishTime = System.nanoTime()
+      _ = logger.debug(
         s"MultipartUploader.copy() elapsed: ${finishTime - startTime} completedRequest: ${completedRequest}"
       )
-      completedRequest
-    }
+
+    } yield completedRequest
+  }
 }
 
 object MultipartUploader {
