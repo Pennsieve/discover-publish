@@ -58,7 +58,8 @@ case class CompletedRequest(
   key: String,
   versionId: String,
   eTag: String,
-  sha256: String
+  sha256: String,
+  operation: CopyOperation
 )
 
 case class FinishedParts(versionId: String, eTag: String, sha256: String)
@@ -224,7 +225,8 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
         key = request.destinationKey,
         versionId = finishedParts.versionId,
         eTag = finishedParts.eTag,
-        sha256 = finishedParts.sha256
+        sha256 = finishedParts.sha256,
+        operation = CopyOperation.MultipartCopy
       )
     }
 
@@ -255,7 +257,8 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       key = request.destinationKey,
       versionId = copyObjectResponse.versionId(),
       eTag = copyObjectResult.eTag(),
-      sha256 = copyObjectResult.checksumSHA256()
+      sha256 = copyObjectResult.checksumSHA256(),
+      operation = CopyOperation.SinglePartCopy
     )
   }
 
