@@ -227,6 +227,34 @@ class TestMultipartUploader
       produced shouldEqual (expected)
     }
 
+    "should use single-part copy for zero-byte file size" in {
+      val fileSize: Long = 0L
+      val copyOperation = PrivateMethod[CopyOperation](Symbol("copyOperation"))
+      val result = multipartUploader invokePrivate copyOperation(fileSize)
+      result shouldEqual CopyOperation.SinglePartCopy
+    }
+
+    "should use single-part copy for file size less than 5 GB" in {
+      val fileSize: Long = 5368709119L // one byte less than 5 GB
+      val copyOperation = PrivateMethod[CopyOperation](Symbol("copyOperation"))
+      val result = multipartUploader invokePrivate copyOperation(fileSize)
+      result shouldEqual CopyOperation.SinglePartCopy
+    }
+
+    "should use multipart copy for file size equal to 5 GB" in {
+      val fileSize: Long = 5368709120L // exactly 5 GB
+      val copyOperation = PrivateMethod[CopyOperation](Symbol("copyOperation"))
+      val result = multipartUploader invokePrivate copyOperation(fileSize)
+      result shouldEqual CopyOperation.MultipartCopy
+    }
+
+    "should use multipart copy for file size greater than 5 GB" in {
+      val fileSize: Long = 5368709121L // one byte more than 5 GB
+      val copyOperation = PrivateMethod[CopyOperation](Symbol("copyOperation"))
+      val result = multipartUploader invokePrivate copyOperation(fileSize)
+      result shouldEqual CopyOperation.MultipartCopy
+    }
+
 //    "should copy a file" in {
 //      val s3Key = "99/66/test.dat"
 //      val expectedETag = "test"
