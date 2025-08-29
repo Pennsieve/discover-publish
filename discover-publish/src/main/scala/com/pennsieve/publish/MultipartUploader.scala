@@ -66,7 +66,7 @@ case class FinishedParts(versionId: String, eTag: String, sha256: String)
 class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     extends LazyLogging {
 
-  val SinglePartCopyThreshold: Long = 5 * 1024 * 1024 * 1024
+  private val SinglePartCopyThreshold: Long = 5 * 1024 * 1024 * 1024
 
   private def getObjectSize(bucket: String, key: String): Long = {
     val getObjectAttributesRequest = GetObjectAttributesRequest
