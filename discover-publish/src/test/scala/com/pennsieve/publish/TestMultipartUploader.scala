@@ -227,6 +227,13 @@ class TestMultipartUploader
       produced shouldEqual (expected)
     }
 
+    "should use single-part copy for zero-byte file size" in {
+      val fileSize: Long = 0L
+      val copyOperation = PrivateMethod[CopyOperation](Symbol("copyOperation"))
+      val result = multipartUploader invokePrivate copyOperation(fileSize)
+      result shouldEqual CopyOperation.SinglePartCopy
+    }
+
     "should use single-part copy for file size less than 5 GB" in {
       val fileSize: Long = 5368709119L // one byte less than 5 GB
       val copyOperation = PrivateMethod[CopyOperation](Symbol("copyOperation"))
