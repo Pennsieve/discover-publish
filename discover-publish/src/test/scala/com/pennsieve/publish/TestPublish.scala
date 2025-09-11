@@ -776,7 +776,7 @@ class TestPublish
       ) shouldBe "readme-data"
 
       val metadata =
-        downloadFile(publishBucket, testKey + Publish.METADATA_FILENAME)
+        downloadFile(publishBucket, testKey + Publish.MANIFEST_FILENAME)
 
       decode[DatasetMetadata](metadata) shouldBe Right(
         DatasetMetadataV5_0(
@@ -808,8 +808,8 @@ class TestPublish
               FileType.JPEG
             ),
             FileManifest(
-              Publish.METADATA_FILENAME,
-              Publish.METADATA_FILENAME,
+              Publish.MANIFEST_FILENAME,
+              Publish.MANIFEST_FILENAME,
               metadata.getBytes("utf-8").length,
               FileType.Json
             ),
@@ -956,7 +956,7 @@ class TestPublish
       ) shouldBe "readme-data"
 
       val metadata =
-        downloadFile(embargoBucket, testKey + Publish.METADATA_FILENAME)
+        downloadFile(embargoBucket, testKey + Publish.MANIFEST_FILENAME)
 
       decode[DatasetMetadata](metadata) shouldBe Right(
         DatasetMetadataV5_0(
@@ -988,8 +988,8 @@ class TestPublish
               FileType.JPEG
             ),
             FileManifest(
-              Publish.METADATA_FILENAME,
-              Publish.METADATA_FILENAME,
+              Publish.MANIFEST_FILENAME,
+              Publish.MANIFEST_FILENAME,
               metadata.getBytes("utf-8").length,
               FileType.Json
             ),
@@ -1115,14 +1115,14 @@ class TestPublish
       )
 
       val metadata =
-        downloadFile(publishBucket, testKey + Publish.METADATA_FILENAME)
+        downloadFile(publishBucket, testKey + Publish.MANIFEST_FILENAME)
 
       decode[DatasetMetadata](metadata).map(_.files.map(_.path)) shouldBe Right(
         List(
           Publish.BANNER_FILENAME,
           Publish.CHANGELOG_FILENAME,
           "files/pkg2/file2.dcm",
-          Publish.METADATA_FILENAME,
+          Publish.MANIFEST_FILENAME,
           "files/pkg1.txt",
           "files/pkg4.pdf",
           Publish.README_FILENAME,

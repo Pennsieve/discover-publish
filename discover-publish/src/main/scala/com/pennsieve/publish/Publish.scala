@@ -75,7 +75,7 @@ object Publish extends StrictLogging {
 
   val BANNER_FILENAME: String = "banner.jpg"
 
-  val METADATA_FILENAME: String = "manifest.json"
+  val MANIFEST_FILENAME: String = "manifest.json"
 
   private def assetKey(
     containerConfig: PublishContainerConfig,
@@ -105,8 +105,8 @@ object Publish extends StrictLogging {
   private def outputKey(config: PublishContainerConfig): String =
     assetKey(config, OUTPUT_FILENAME)
 
-  private def publishedMetadataKey(config: PublishContainerConfig): String =
-    assetKey(config, METADATA_FILENAME)
+  private def publishedManifestKey(config: PublishContainerConfig): String =
+    assetKey(config, MANIFEST_FILENAME)
 
   private def publicAssetKeyPrefix(container: PublishContainer): String =
     joinKeys(
@@ -139,11 +139,11 @@ object Publish extends StrictLogging {
   ): EitherT[Future, CoreError, Unit] = {
     logger.info(s"Starting publishAssets5x()")
     for {
-      metadata <- getDatatsetMetadata(container)
+      manifest <- getDatatsetManifest(container)
 
       // filter out where sourcePackageId.isEmpty because these are Files not attached to Packages
       // (i.e., readme.md, banner.jpg, changelog.md, the manifest.json, and Model export files)
-      previousFiles = metadata.files.filterNot(_.sourcePackageId.isEmpty).map {
+      previousFiles = manifest.files.filterNot(_.sourcePackageId.isEmpty).map {
         previousFile =>
           logger.debug(s"publishAssets5x() previousFile: ${previousFile}")
           previousFile
@@ -248,7 +248,7 @@ object Publish extends StrictLogging {
     * Finalizes a dataset for publishing by:
     *
     * - computing the total file size for the dataset
-    * - recording metadata about the dataset
+    * - recording manifest about the dataset
     *
     * TODO: move this into a lambda or a different task definition so we don't
     * have to reload the Postgres snapshot just to write these files.
@@ -270,9 +270,9 @@ object Publish extends StrictLogging {
         graphManifestKey(container)
       )
 
-      _ = logger.info(s"Writing final manifest file: $METADATA_FILENAME")
+      _ = logger.info(s"Writing final manifest file: $MANIFEST_FILENAME")
 
-      manifestVersion <- writeMetadata(
+      manifestVersion <- writeManifest(
         container,
         assets.bannerManifest.manifest :: assets.readmeManifest.manifest :: assets.changelogManifest.manifest :: graph.manifests ++ assets.packageManifests
           .map(_.manifest)
@@ -373,9 +373,9 @@ object Publish extends StrictLogging {
   }
 
   /**
-    * downloads the dataset metadata (manifest.json) from S3
+    * downloads the dataset manifest (manifest.json) from S3
     */
-  def getDatatsetMetadata(
+  def getDatatsetManifest(
     container: PublishContainerConfig
   )(implicit
     executionContext: ExecutionContext,
@@ -386,7 +386,7 @@ object Publish extends StrictLogging {
       case _ =>
         downloadFromS3[DatasetMetadata](
           container,
-          publishedMetadataKey(container)
+          publishedManifestKey(container)
         )
     }
 
@@ -656,9 +656,9 @@ object Publish extends StrictLogging {
   }
 
   /**
-    * Write published metadata JSON file.
+    * Write published manifest JSON file.
     */
-  def writeMetadata(
+  def writeManifest(
     containerConfig: PublishContainerConfig,
     manifests: List[FileManifest]
   )(implicit
@@ -666,13 +666,13 @@ object Publish extends StrictLogging {
     system: ActorSystem
   ): EitherT[Future, CoreError, Option[String]] = {
 
-    // Self-describing metadata file to include in the file manifest.
+    // Self-describing manifest file to include in the file manifest.
     // This presents a chicken and egg problem since we need to know the
-    // size of metadata.json for the manifest, but we need the size
+    // size of manifest.json for the manifest, but we need the size
     // to be encoded in the JSON file before we can compute the size.
     // Set size to 0 for now, and revise it later.
-    val metadataManifest =
-      FileManifest(METADATA_FILENAME, METADATA_FILENAME, 0, FileType.Json)
+    val manifest =
+      FileManifest(MANIFEST_FILENAME, MANIFEST_FILENAME, 0, FileType.Json)
 
     val unsizedMetadata = DatasetMetadataV5_0(
       pennsieveDatasetId = containerConfig.publishedDatasetId,
@@ -693,7 +693,7 @@ object Publish extends StrictLogging {
       datePublished = LocalDate.now(),
       license = containerConfig.dataset.license,
       `@id` = s"https://doi.org/${containerConfig.doi}",
-      files = (metadataManifest :: manifests).sorted,
+      files = (manifest :: manifests).sorted,
       collections = Some(containerConfig.collections),
       relatedPublications = Some(containerConfig.externalPublications),
       release = None,
@@ -708,12 +708,12 @@ object Publish extends StrictLogging {
 
     // Update the actual size of metadata.json
     val metadata = unsizedMetadata.copy(
-      files = (metadataManifest.copy(size = metadataSize) :: manifests).sorted
+      files = (manifest.copy(size = metadataSize) :: manifests).sorted
     )
 
     uploadToS3(
       containerConfig,
-      joinKeys(containerConfig.s3Key, METADATA_FILENAME),
+      joinKeys(containerConfig.s3Key, MANIFEST_FILENAME),
       metadata.asJson
     ).map { result =>
       containerConfig.workflowId match {

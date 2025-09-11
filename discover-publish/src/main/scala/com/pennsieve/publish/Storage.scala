@@ -42,7 +42,7 @@ object Storage {
 
   val BANNER_FILENAME: String = "banner.jpg"
 
-  val METADATA_FILENAME: String = "manifest.json"
+  val MANIFEST_FILENAME: String = "manifest.json"
 
   val FILE_ACTIONS_FILENAME: String = "file-actions.json"
 
@@ -74,8 +74,8 @@ object Storage {
   def outputKey(config: PublishContainerConfig): String =
     assetKey(config, OUTPUT_FILENAME)
 
-  def publishedMetadataKey(config: PublishContainerConfig): String =
-    assetKey(config, METADATA_FILENAME)
+  def publishedManifestKey(config: PublishContainerConfig): String =
+    assetKey(config, MANIFEST_FILENAME)
 
   def fileActionsKey(config: PublishContainerConfig): String =
     assetKey(config, FILE_ACTIONS_FILENAME)

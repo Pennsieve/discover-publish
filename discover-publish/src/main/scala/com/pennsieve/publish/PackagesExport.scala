@@ -23,7 +23,7 @@ import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import cats.data.EitherT
 import cats.implicits._
-import com.amazonaws.services.s3.model.{ ObjectMetadata, PutObjectRequest }
+import com.amazonaws.services.s3.model.{ PutObjectRequest }
 import com.pennsieve.domain.{ CoreError, ThrowableError }
 import com.typesafe.scalalogging.LazyLogging
 import com.pennsieve.models.{ ExternalId, FileManifest }
