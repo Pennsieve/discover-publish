@@ -279,7 +279,7 @@ object Publish extends StrictLogging {
         graphManifestKey(container)
       )
 
-      metadata <- downloadFromS3[ExportedGraphResult](
+      metadata <- downloadFromS3[ExportedMetadataResult](
         container,
         metadataManifestKey(container)
       )
