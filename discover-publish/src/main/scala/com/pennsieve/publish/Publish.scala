@@ -67,6 +67,8 @@ object Publish extends StrictLogging {
 
   val GRAPH_ASSETS_FILENAME: String = "graph.json"
 
+  val METADATA_ASSETS_FILENAME: String = "metadata.json"
+
   val OUTPUT_FILENAME: String = "outputs.json"
 
   val README_FILENAME: String = "readme.md"
@@ -102,6 +104,9 @@ object Publish extends StrictLogging {
   private def graphManifestKey(config: PublishContainerConfig): String =
     assetKey(config, GRAPH_ASSETS_FILENAME)
 
+  private def metadataManifestKey(config: PublishContainerConfig): String =
+    assetKey(config, METADATA_ASSETS_FILENAME)
+
   private def outputKey(config: PublishContainerConfig): String =
     assetKey(config, OUTPUT_FILENAME)
 
@@ -118,7 +123,11 @@ object Publish extends StrictLogging {
     * be deleted.
     */
   def temporaryFiles: Seq[String] =
-    Seq(PUBLISH_ASSETS_FILENAME, GRAPH_ASSETS_FILENAME)
+    Seq(
+      PUBLISH_ASSETS_FILENAME,
+      GRAPH_ASSETS_FILENAME,
+      METADATA_ASSETS_FILENAME
+    )
 
   def publishAssets(
     container: PublishContainer
@@ -270,6 +279,11 @@ object Publish extends StrictLogging {
         graphManifestKey(container)
       )
 
+      metadata <- downloadFromS3[ExportedGraphResult](
+        container,
+        metadataManifestKey(container)
+      )
+
       _ = logger.info(s"Writing final manifest file: $MANIFEST_FILENAME")
 
       manifestVersion <- writeManifest(
@@ -294,14 +308,15 @@ object Publish extends StrictLogging {
         ).asJson
       )
 
+// handled by s3 cleanup lambda
 //      _ = logger.info(
-//        s"Deleting temporary files: $PUBLISH_ASSETS_FILENAME, $GRAPH_ASSETS_FILENAME"
+//        s"Deleting temporary files: $PUBLISH_ASSETS_FILENAME, $GRAPH_ASSETS_FILENAME, $METADATA_ASSETS_FILENAME"
 //      )
 //
 //      _ <- container.s3
 //        .deleteObjectsByKeys(
 //          container.s3Bucket,
-//          Seq(publishedAssetsKey(container), graphManifestKey(container)),
+//          Seq(publishedAssetsKey(container), graphManifestKey(container), metadataManifestKey(container)),
 //          isRequesterPays = true
 //        )
 //        .toEitherT[Future]
