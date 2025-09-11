@@ -44,7 +44,11 @@ import com.pennsieve.models.{
   Role,
   User
 }
-import com.pennsieve.publish.models.{ ExportedGraphResult, PublishAssetResult }
+import com.pennsieve.publish.models.{
+  ExportedGraphResult,
+  ExportedMetadataResult,
+  PublishAssetResult
+}
 import com.pennsieve.publish.utils.joinKeys
 import com.pennsieve.test.{ PersistantTestContainers, PostgresDockerContainer }
 import com.pennsieve.test.helpers.{ EitherBePropertyMatchers, TestDatabase }
@@ -261,6 +265,9 @@ class TestPublishS3Requests
       val exportedGraphResultObject =
         mockS3Object(ExportedGraphResult(Nil).asJson.toString)
 
+      val exportedMetadataResultObject =
+        mockS3Object(ExportedMetadataResult(Nil).asJson.toString)
+
       val getObjectCapture = CaptureAll[GetObjectRequest]()
       val putObjectCapture = CaptureAll[PutObjectRequest]()
       val deleteObjectsCapture = CaptureAll[DeleteObjectsRequest]()
@@ -268,12 +275,14 @@ class TestPublishS3Requests
       (mockAmazonS3
         .getObject(_: GetObjectRequest))
         .expects(capture(getObjectCapture))
-        .twice()
+        .anyNumberOfTimes()
         .onCall { r: GetObjectRequest =>
           if (r.getKey.endsWith(Publish.PUBLISH_ASSETS_FILENAME)) {
             publishAssetResultObject
           } else if (r.getKey.endsWith(Publish.GRAPH_ASSETS_FILENAME)) {
             exportedGraphResultObject
+          } else if (r.getKey.endsWith(Publish.METADATA_ASSETS_FILENAME)) {
+            exportedMetadataResultObject
           } else fail(s"Unexpected get object key: ${r.getKey}")
         }
 

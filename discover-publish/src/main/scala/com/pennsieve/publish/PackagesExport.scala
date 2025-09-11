@@ -201,8 +201,8 @@ object PackagesExport extends LazyLogging {
     )
 
   /**
-    * Map package ID to S3 path so that `model-publish` can rewrite node IDs as
-    * package paths.
+    * Map package ID to S3 path so that `model-publish` & `metadata-publish`
+    * can rewrite node IDs as package paths.
     *
     * This sink receives multiple CopyActions (one per source file) for each
     * package.  However, since all source files belonging to a package have the

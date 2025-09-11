@@ -288,7 +288,7 @@ object Publish extends StrictLogging {
 
       manifestVersion <- writeManifest(
         container,
-        assets.bannerManifest.manifest :: assets.readmeManifest.manifest :: assets.changelogManifest.manifest :: graph.manifests ++ assets.packageManifests
+        assets.bannerManifest.manifest :: assets.readmeManifest.manifest :: assets.changelogManifest.manifest :: graph.manifests ++ metadata.manifests ++ assets.packageManifests
           .map(_.manifest)
       )
 
