@@ -30,20 +30,6 @@ import java.nio.charset.StandardCharsets
 import scala.concurrent.{ ExecutionContext, Future }
 
 object Storage {
-  val PUBLISH_ASSETS_FILENAME: String = "publish.json"
-
-  val GRAPH_ASSETS_FILENAME: String = "graph.json"
-
-  val OUTPUT_FILENAME: String = "outputs.json"
-
-  val README_FILENAME: String = "readme.md"
-
-  val CHANGELOG_FILENAME: String = "changelog.md"
-
-  val BANNER_FILENAME: String = "banner.jpg"
-
-  val MANIFEST_FILENAME: String = "manifest.json"
-
   val FILE_ACTIONS_FILENAME: String = "file-actions.json"
 
   private def assetKey(
@@ -64,18 +50,6 @@ object Storage {
           )
         )
     }
-
-  def publishedAssetsKey(config: PublishContainerConfig): String =
-    assetKey(config, PUBLISH_ASSETS_FILENAME)
-
-  def graphManifestKey(config: PublishContainerConfig): String =
-    assetKey(config, GRAPH_ASSETS_FILENAME)
-
-  def outputKey(config: PublishContainerConfig): String =
-    assetKey(config, OUTPUT_FILENAME)
-
-  def publishedManifestKey(config: PublishContainerConfig): String =
-    assetKey(config, MANIFEST_FILENAME)
 
   def fileActionsKey(config: PublishContainerConfig): String =
     assetKey(config, FILE_ACTIONS_FILENAME)
