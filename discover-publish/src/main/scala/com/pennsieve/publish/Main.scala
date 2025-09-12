@@ -44,7 +44,6 @@ case class PublishError(message: String) extends AbstractError {
 
 sealed trait PublishAction
 case object PublishAssets extends PublishAction
-case object ExportNeptuneGraph extends PublishAction
 case object Finalize extends PublishAction
 
 object Main extends App with StrictLogging {
@@ -61,7 +60,6 @@ object Main extends App with StrictLogging {
   def getPublishAction(cmd: String): Either[PublishError, PublishAction] =
     cmd.trim.toLowerCase() match {
       case "publish-assets" => Right(PublishAssets)
-      case "export-neptune-graph" => Right(ExportNeptuneGraph)
       case "finalize" => Right(Finalize)
       case _ => Left(PublishError(s"Not a value command: ${cmd}"))
     }
@@ -169,8 +167,6 @@ object Main extends App with StrictLogging {
         case PublishAssets =>
           logger.info(s"Publishing Assets")
           Publish.publishAssets(publishContainer)
-        case ExportNeptuneGraph =>
-          throw new Exception("Neptune no longer exists")
         case Finalize =>
           logger.info(s"Finalizing Publication")
           Publish.finalizeDataset(publishContainer)

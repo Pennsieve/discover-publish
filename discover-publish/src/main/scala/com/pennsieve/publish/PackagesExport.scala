@@ -23,7 +23,7 @@ import akka.stream.scaladsl.Sink
 import akka.stream.scaladsl.Source
 import cats.data.EitherT
 import cats.implicits._
-import com.amazonaws.services.s3.model.{ ObjectMetadata, PutObjectRequest }
+import com.amazonaws.services.s3.model.{ PutObjectRequest }
 import com.pennsieve.domain.{ CoreError, ThrowableError }
 import com.typesafe.scalalogging.LazyLogging
 import com.pennsieve.models.{ ExternalId, FileManifest }
@@ -201,8 +201,8 @@ object PackagesExport extends LazyLogging {
     )
 
   /**
-    * Map package ID to S3 path so that `model-publish` can rewrite node IDs as
-    * package paths.
+    * Map package ID to S3 path so that `model-publish` & `metadata-publish`
+    * can rewrite node IDs as package paths.
     *
     * This sink receives multiple CopyActions (one per source file) for each
     * package.  However, since all source files belonging to a package have the

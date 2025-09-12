@@ -660,6 +660,7 @@ class TestPublish
       )
 
       runModelPublish(publishBucket, testKey)
+      runMetadataPublish(publishBucket, testKey)
 
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
 //      // Ensure all temporary files should be deleted by now:
@@ -724,6 +725,7 @@ class TestPublish
       assert(assetsJson.isRight)
 
       runModelPublish(publishBucket, testKey)
+      runMetadataPublish(publishBucket, testKey)
 
       // Finalizing the jobs should write an `output.json` and delete all other
       // temporary files
@@ -737,6 +739,9 @@ class TestPublish
 //      assert(
 //        Try(downloadFile(publishBucket, testKey + "graph.json")).toEither.isLeft
 //      )
+//      assert(
+//        Try(downloadFile(publishBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
+//      )
 
       // should write a temp results file to publish bucket
       val tempResults = decode[Publish.TempPublishResults](
@@ -747,10 +752,16 @@ class TestPublish
       tempResults.changelogKey shouldBe testKey + Publish.CHANGELOG_FILENAME
       tempResults.totalSize > 0 shouldBe true
 
-      // should export package and graph files to publish bucket
+      // should export package, graph, and metadata files to publish bucket
       downloadFile(publishBucket, testKey + "files/pkg1.txt") shouldBe "data data"
       downloadFile(publishBucket, testKey + "files/pkg2/file2.dcm") shouldBe "atad atad"
       downloadFile(publishBucket, testKey + "files/pkg2/file3.dcm") shouldBe "double data"
+
+      val metadataSchemaJson =
+        downloadFile(
+          publishBucket,
+          testKey + "metadata/models/patient/versions/1/schema.json"
+        )
 
       val schemaJson =
         downloadFile(publishBucket, testKey + "metadata/schema.json")
@@ -776,7 +787,7 @@ class TestPublish
       ) shouldBe "readme-data"
 
       val metadata =
-        downloadFile(publishBucket, testKey + Publish.METADATA_FILENAME)
+        downloadFile(publishBucket, testKey + Publish.MANIFEST_FILENAME)
 
       decode[DatasetMetadata](metadata) shouldBe Right(
         DatasetMetadataV5_0(
@@ -808,8 +819,8 @@ class TestPublish
               FileType.JPEG
             ),
             FileManifest(
-              Publish.METADATA_FILENAME,
-              Publish.METADATA_FILENAME,
+              Publish.MANIFEST_FILENAME,
+              Publish.MANIFEST_FILENAME,
               metadata.getBytes("utf-8").length,
               FileType.Json
             ),
@@ -844,6 +855,12 @@ class TestPublish
               "schema.json",
               "metadata/schema.json",
               schemaJson.length,
+              FileType.Json
+            ),
+            FileManifest(
+              "schema.json",
+              "metadata/models/patient/versions/1/schema.json",
+              metadataSchemaJson.length,
               FileType.Json
             )
           ).sorted,
@@ -904,6 +921,7 @@ class TestPublish
       assert(assetsJson.isRight)
 
       runModelPublish(embargoBucket, testKey)
+      runMetadataPublish(embargoBucket, testKey)
 
       // Finalizing the jobs should write an `output.json` and delete all other
       // temporary files
@@ -917,6 +935,9 @@ class TestPublish
 //      assert(
 //        Try(downloadFile(embargoBucket, testKey + "graph.json")).toEither.isLeft
 //      )
+//      assert(
+//        Try(downloadFile(embargoBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
+//      )
 
       // should write a temp results file to publish bucket
       val tempResults = decode[Publish.TempPublishResults](
@@ -927,10 +948,16 @@ class TestPublish
       tempResults.changelogKey shouldBe testKey + Publish.CHANGELOG_FILENAME
       tempResults.totalSize > 0 shouldBe true
 
-      // should export package and graph files to publish bucket
+      // should export package, graph and metadata files to publish bucket
       downloadFile(embargoBucket, testKey + "files/pkg1.txt") shouldBe "data data"
       downloadFile(embargoBucket, testKey + "files/pkg2/file2.dcm") shouldBe "atad atad"
       downloadFile(embargoBucket, testKey + "files/pkg2/file3.dcm") shouldBe "double data"
+
+      val metadataSchemaJson =
+        downloadFile(
+          embargoBucket,
+          testKey + "metadata/models/patient/versions/1/schema.json"
+        )
 
       val schemaJson =
         downloadFile(embargoBucket, testKey + "metadata/schema.json")
@@ -956,7 +983,7 @@ class TestPublish
       ) shouldBe "readme-data"
 
       val metadata =
-        downloadFile(embargoBucket, testKey + Publish.METADATA_FILENAME)
+        downloadFile(embargoBucket, testKey + Publish.MANIFEST_FILENAME)
 
       decode[DatasetMetadata](metadata) shouldBe Right(
         DatasetMetadataV5_0(
@@ -988,8 +1015,8 @@ class TestPublish
               FileType.JPEG
             ),
             FileManifest(
-              Publish.METADATA_FILENAME,
-              Publish.METADATA_FILENAME,
+              Publish.MANIFEST_FILENAME,
+              Publish.MANIFEST_FILENAME,
               metadata.getBytes("utf-8").length,
               FileType.Json
             ),
@@ -1024,6 +1051,12 @@ class TestPublish
               "schema.json",
               "metadata/schema.json",
               schemaJson.length,
+              FileType.Json
+            ),
+            FileManifest(
+              "schema.json",
+              "metadata/models/patient/versions/1/schema.json",
+              metadataSchemaJson.length,
               FileType.Json
             )
           ).sorted,
@@ -1101,6 +1134,7 @@ class TestPublish
 
       Publish.publishAssets(publishContainer).await.isRight shouldBe true
       runModelPublish(publishBucket, testKey)
+      runMetadataPublish(publishBucket, testKey)
 
       // Finalizing the jobs should write an `output.json` and delete all other
       // temporary files
@@ -1115,23 +1149,24 @@ class TestPublish
       )
 
       val metadata =
-        downloadFile(publishBucket, testKey + Publish.METADATA_FILENAME)
+        downloadFile(publishBucket, testKey + Publish.MANIFEST_FILENAME)
 
       decode[DatasetMetadata](metadata).map(_.files.map(_.path)) shouldBe Right(
         List(
           Publish.BANNER_FILENAME,
           Publish.CHANGELOG_FILENAME,
           "files/pkg2/file2.dcm",
-          Publish.METADATA_FILENAME,
+          Publish.MANIFEST_FILENAME,
           "files/pkg1.txt",
           "files/pkg4.pdf",
           Publish.README_FILENAME,
-          "metadata/schema.json"
+          "metadata/schema.json",
+          "metadata/models/patient/versions/1/schema.json"
         )
       )
     }
 
-    "compute self-aware metadata.json size" in {
+    "compute self-aware manifest.json size" in {
       Publish.sizeCountingOwnSize(0) shouldBe 1
       Publish.sizeCountingOwnSize(1) shouldBe 2
       Publish.sizeCountingOwnSize(6) shouldBe 7
@@ -2385,6 +2420,62 @@ class TestPublish
       .leftMap(e => {
         println(
           s"Error uploading s3://$s3Bucket/${s3Key + Publish.GRAPH_ASSETS_FILENAME}"
+        )
+        e
+      })
+      .isRight shouldBe true
+  }
+
+  /**
+    * Mock run `metadata-publish` publishing just one metadata model schema
+    */
+  def runMetadataPublish(s3Bucket: String, s3Key: String): Unit = {
+
+    val schemaJsonKey = s3Key + "metadata/models/patient/versions/1/schema.json"
+
+    val schemaJson = s"""
+      {
+        "$$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "patient",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": [
+              "integer"
+            ],
+            "x-pennsieve-key": true
+          },
+          "age": {
+            "type": [
+              "integer"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "age",
+        ]
+      }
+    """
+
+    s3.putObject(s3Bucket, schemaJsonKey, schemaJson)
+      .leftMap(e => {
+        println(s"Error uploading s3://$s3Bucket/$schemaJsonKey")
+        e
+      })
+      .isRight shouldBe true
+
+    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME, s"""{
+      "manifests": [
+        {
+          "path": "metadata/models/patient/versions/1/schema.json",
+          "size": ${schemaJson.length},
+          "fileType": "Json"
+        }
+      ]}""")
+      .leftMap(e => {
+        println(
+          s"Error uploading s3://$s3Bucket/${s3Key + Publish.METADATA_ASSETS_FILENAME}"
         )
         e
       })

@@ -90,3 +90,12 @@ object ExportedGraphResult {
   implicit val decoder: Decoder[ExportedGraphResult] =
     deriveDecoder[ExportedGraphResult]
 }
+
+case class ExportedMetadataResult(manifests: List[FileManifest])
+
+object ExportedMetadataResult {
+  implicit val encoder: Encoder[ExportedMetadataResult] =
+    deriveEncoder[ExportedMetadataResult]
+  implicit val decoder: Decoder[ExportedMetadataResult] =
+    deriveDecoder[ExportedMetadataResult]
+}
