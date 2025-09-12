@@ -740,7 +740,7 @@ class TestPublish
 //        Try(downloadFile(publishBucket, testKey + "graph.json")).toEither.isLeft
 //      )
 //      assert(
-//        Try(downloadFile(publishBucket, testKey + "metadata.json")).toEither.isLeft
+//        Try(downloadFile(publishBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
 //      )
 
       // should write a temp results file to publish bucket
@@ -936,7 +936,7 @@ class TestPublish
 //        Try(downloadFile(embargoBucket, testKey + "graph.json")).toEither.isLeft
 //      )
 //      assert(
-//        Try(downloadFile(embargoBucket, testKey + "metadata.json")).toEither.isLeft
+//        Try(downloadFile(embargoBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
 //      )
 
       // should write a temp results file to publish bucket
@@ -1166,7 +1166,7 @@ class TestPublish
       )
     }
 
-    "compute self-aware metadata.json size" in {
+    "compute self-aware manifest.json size" in {
       Publish.sizeCountingOwnSize(0) shouldBe 1
       Publish.sizeCountingOwnSize(1) shouldBe 2
       Publish.sizeCountingOwnSize(6) shouldBe 7

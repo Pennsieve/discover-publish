@@ -67,7 +67,7 @@ object Publish extends StrictLogging {
 
   val GRAPH_ASSETS_FILENAME: String = "graph.json"
 
-  val METADATA_ASSETS_FILENAME: String = "metadata.json"
+  val METADATA_ASSETS_FILENAME: String = "metadata_intermediate_manifest.json"
 
   val OUTPUT_FILENAME: String = "outputs.json"
 
@@ -721,7 +721,7 @@ object Publish extends StrictLogging {
       dropNullPrinter(unsizedMetadata.asJson).getBytes("utf-8").length - 1
     )
 
-    // Update the actual size of metadata.json
+    // Update the actual size of manifest.json
     val metadata = unsizedMetadata.copy(
       files = (manifest.copy(size = metadataSize) :: manifests).sorted
     )
