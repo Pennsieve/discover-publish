@@ -1,0 +1,273 @@
+{
+  "StartAt": "Initial S3 cleanup",
+  "States": {
+    "Initial S3 cleanup": {
+      "Type": "Task",
+      "Resource": "${discover_s3clean_lambda_arn}",
+      "Parameters": {
+        "publish_bucket.$": "$.publish_bucket",
+        "embargo_bucket.$": "$.embargo_bucket",
+        "s3_key_prefix.$": "$.s3_publish_key",
+        "workflow_id.$": "$.workflow_id",
+        "published_dataset_id.$": "$.published_dataset_id",
+        "published_dataset_version.$": "$.version",
+        "cleanup_stage": "INITIAL"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [ "States.ALL" ],
+          "ResultPath": "$.error",
+          "Next": "Notify failure"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "Invoke discover-pgdump"
+    },
+
+    "Invoke discover-pgdump": {
+      "Type": "Task",
+      "Resource": "${discover_pgdump_lambda_arn}",
+      "Parameters": {
+        "organization_schema.$": "$.organization_id",
+        "s3_key.$": "$.s3_pgdump_key"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 30,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [ "States.ALL" ],
+          "ResultPath": "$.error",
+          "Next": "Notify failure"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "Run discover-publish:publish-assets"
+    },
+
+    "Run discover-publish:publish-assets": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${fargate_ecs_cluster_arn}",
+        "TaskDefinition": "${discover_publish_task_definition_family}",
+        "NetworkConfiguration": ${jsonencode(ecs_network)},
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "discover-publish",
+              "Environment": ${jsonencode(concat(discover_publish_environment_override, [
+                { Name = "PUBLISH_ACTION", Value = "publish-assets" }
+              ]))}
+            },
+            {
+              "Name": "discover-postgres",
+              "Environment": [
+                { "Name": "S3_PGDUMP_KEY", "Value.$": "$.s3_pgdump_key"}
+              ]
+            }
+          ]
+        }
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [ "States.ALL" ],
+          "ResultPath": "$.error",
+          "Next": "Invoke discover-s3clean"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "Parallel run model and metadata publish"
+    },
+    "Parallel run model and metadata publish": {
+      "Type": "Parallel",
+      "Branches": [
+        {
+          "StartAt": "Run model-publish",
+          "States": {
+            "Run model-publish": {
+              "Type": "Task",
+              "End": true,
+              "Resource": "arn:aws:states:::ecs:runTask.sync",
+              "Parameters": {
+                "LaunchType": "FARGATE",
+                "Cluster": "${fargate_ecs_cluster_arn}",
+                "TaskDefinition": "${model_publish_task_definition_family}",
+                "NetworkConfiguration": ${jsonencode(ecs_network)},
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "model-publish",
+                      "Environment": ${jsonencode(common_environment_override)}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "StartAt": "Run metadata-publish",
+          "States": {
+            "Run metadata-publish": {
+              "Type": "Task",
+              "End": true,
+              "Resource": "arn:aws:states:::ecs:runTask.sync",
+              "Parameters": {
+                "LaunchType": "FARGATE",
+                "Cluster": "${fargate_ecs_cluster_arn}",
+                "TaskDefinition": "${metadata_publish_task_definition_family}",
+                "NetworkConfiguration": ${jsonencode(ecs_network)},
+                "Overrides": {
+                  "ContainerOverrides": [
+                    {
+                      "Name": "metadata-publish",
+                      "Environment": ${jsonencode(common_environment_override)}
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [ "States.ALL" ],
+          "ResultPath": "$.error",
+          "Next": "Invoke discover-s3clean"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "Run discover-publish:finalize"
+    },
+    "Run discover-publish:finalize": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${fargate_ecs_cluster_arn}",
+        "TaskDefinition": "${discover_publish_task_definition_family}",
+        "NetworkConfiguration": ${jsonencode(ecs_network)},
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "discover-publish",
+              "Environment": ${jsonencode(concat(discover_publish_environment_override, [
+                { Name = "PUBLISH_ACTION", Value = "finalize" }
+              ]))}
+            },
+            {
+              "Name": "discover-postgres",
+              "Environment": [
+                {
+                  "Name": "S3_PGDUMP_KEY", "Value.$": "$.s3_pgdump_key"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "Catch": [
+        {
+          "ErrorEquals": [ "States.ALL" ],
+          "ResultPath": "$.error",
+          "Next": "Invoke discover-s3clean"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "Notify success"
+    },
+
+    "Invoke discover-s3clean": {
+      "Type": "Task",
+      "Resource": "${discover_s3clean_lambda_arn}",
+      "Parameters": {
+        "publish_bucket.$": "$.publish_bucket",
+        "embargo_bucket.$": "$.embargo_bucket",
+        "s3_key_prefix.$": "$.s3_publish_key",
+        "workflow_id.$": "$.workflow_id",
+        "published_dataset_id.$": "$.published_dataset_id",
+        "published_dataset_version.$": "$.version",
+        "cleanup_stage": "FAILURE"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "States.TaskFailed",
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException"
+          ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [ "States.ALL" ],
+          "ResultPath": "$.error",
+          "Next": "Notify failure"
+        }
+      ],
+      "ResultPath": null,
+      "Next": "Notify failure"
+    },
+
+    "Notify success": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Parameters": {
+        "QueueUrl": "${discover_publish_queue_id}",
+        "MessageBody": {
+          "organization_id.$": "$.organization_id",
+          "dataset_id.$": "$.dataset_id",
+          "version.$": "$.version",
+          "status": "PUBLISH_SUCCEEDED"
+        }
+      },
+      "End": true
+    },
+
+    "Notify failure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::sqs:sendMessage",
+      "Parameters": {
+        "QueueUrl": "${discover_publish_queue_id}",
+        "MessageBody": {
+          "organization_id.$": "$.organization_id",
+          "dataset_id.$": "$.dataset_id",
+          "version.$": "$.version",
+          "status": "PUBLISH_FAILED",
+          "error.$": "$.error.Cause"
+        }
+      },
+      "End": true
+    }
+  }
+}

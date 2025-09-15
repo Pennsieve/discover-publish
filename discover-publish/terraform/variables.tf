@@ -69,6 +69,21 @@ locals {
   model_publish_task_definition_family = join(":", slice(local.model_publish_arn_components, 0, length(local.model_publish_arn_components) - 1))
   model_publish_task_definition_arn_wildcard_version = "${local.model_publish_task_definition_family}:*"
 
+  # Get the `metadata-publish` task definition family, without the revision attached.
+  # If the revision is attached, `discover-publish` needs to be deployed every
+  # time `metadata-publish` is deployed to prevent the `metadata-publish` definition
+  # from going stale. For example, this converts:
+  #
+  #   arn:aws:ecs:us-east-1:300018926035:task-definition/dev-metadata-publish-use1:15
+  #
+  # to
+  #
+  #   arn:aws:ecs:us-east-1:300018926035:task-definition/dev-metadata-publish-use1
+  #
+  metadata_publish_arn_components = split(":", data.terraform_remote_state.metadata_publish.outputs.metadata_publish_ecs_task_definition_arn)
+  metadata_publish_task_definition_family = join(":", slice(local.metadata_publish_arn_components, 0, length(local.metadata_publish_arn_components) - 1))
+  metadata_publish_task_definition_arn_wildcard_version = "${local.metadata_publish_task_definition_family}:*"
+
   # Similar to the above, prefer the discover-publish task definition family to a 
   # specific revision. This prevents the old revision from going stale if a 
   # deployment occurs while publishing.
