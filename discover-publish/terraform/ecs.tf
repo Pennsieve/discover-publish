@@ -1,4 +1,3 @@
-// CREATE ECS TASK DEFINITION
 locals {
   task_definition_vars = {
     aws_region                = data.aws_region.current_region.name

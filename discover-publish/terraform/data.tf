@@ -83,6 +83,17 @@ data "terraform_remote_state" "model_publish" {
   }
 }
 
+# IMPORT METADATA-PUBLISH DATA
+data "terraform_remote_state" "metadata_publish" {
+  backend = "s3"
+
+  config = {
+    bucket = "${var.aws_account}-terraform-state"
+    key    = "aws/${data.aws_region.current_region.name}/${var.vpc_name}/${var.environment_name}/metadata-publish/terraform.tfstate"
+    region = "us-east-1"
+  }
+}
+
 # IMPORT PLATFORM INFRASTRUCTURE DATA
 data "terraform_remote_state" "platform_infrastructure" {
   backend = "s3"
