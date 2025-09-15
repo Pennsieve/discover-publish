@@ -147,6 +147,12 @@
                     {
                       "Name": "metadata-publish",
                       "Environment": ${jsonencode(common_environment_override)}
+                    },
+                    {
+                      "Name": "metadata-publish-postgres",
+                      "Environment": [
+                        { "Name": "S3_PGDUMP_KEY", "Value.$": "$.s3_pgdump_key"}
+                      ]
                     }
                   ]
                 }
