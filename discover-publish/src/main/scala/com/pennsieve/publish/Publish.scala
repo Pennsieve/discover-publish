@@ -282,7 +282,9 @@ object Publish extends StrictLogging {
       metadata <- downloadFromS3[ExportedMetadataResult](
         container,
         metadataManifestKey(container)
-      )
+      ) recover {
+        case _ => ExportedMetadataResult.empty()
+      }
 
       _ = logger.info(s"Writing final manifest file: $MANIFEST_FILENAME")
 

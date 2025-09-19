@@ -671,6 +671,20 @@ class TestPublish
 //      }
     }
 
+    "succeed when metadata service does not emit any model data" in {
+      Publish.publishAssets(publishContainer).await.isRight shouldBe true
+      assert(
+        Try(
+          downloadFile(publishBucket, testKey + Publish.PUBLISH_ASSETS_FILENAME)
+        ).toEither.isRight
+      )
+
+      runModelPublish(publishBucket, testKey)
+      //runMetadataPublish(publishBucket, testKey)
+
+      Publish.finalizeDataset(publishContainer).await shouldBe Right(())
+    }
+
     "create metadata, package objects and public assets in S3 (publish bucket)" in {
 
       // everything under `testKey` should be gone:
