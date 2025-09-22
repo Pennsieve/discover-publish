@@ -94,6 +94,9 @@ object ExportedGraphResult {
 case class ExportedMetadataResult(manifests: List[FileManifest])
 
 object ExportedMetadataResult {
+  def empty(): ExportedMetadataResult =
+    ExportedMetadataResult(manifests = List.empty[FileManifest])
+
   implicit val encoder: Encoder[ExportedMetadataResult] =
     deriveEncoder[ExportedMetadataResult]
   implicit val decoder: Decoder[ExportedMetadataResult] =

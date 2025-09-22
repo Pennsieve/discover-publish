@@ -671,6 +671,34 @@ class TestPublish
 //      }
     }
 
+    "succeed when metadata service writes a manifest file with an empty file list" in {
+      Publish.publishAssets(publishContainer).await.isRight shouldBe true
+      assert(
+        Try(
+          downloadFile(publishBucket, testKey + Publish.PUBLISH_ASSETS_FILENAME)
+        ).toEither.isRight
+      )
+
+      runModelPublish(publishBucket, testKey)
+      runMetadataPublishEmptyManifestList(publishBucket, testKey)
+
+      Publish.finalizeDataset(publishContainer).await shouldBe Right(())
+    }
+
+    "succeed when metadata service does not write an intermediate file" in {
+      Publish.publishAssets(publishContainer).await.isRight shouldBe true
+      assert(
+        Try(
+          downloadFile(publishBucket, testKey + Publish.PUBLISH_ASSETS_FILENAME)
+        ).toEither.isRight
+      )
+
+      runModelPublish(publishBucket, testKey)
+      //runMetadataPublish(publishBucket, testKey)
+
+      Publish.finalizeDataset(publishContainer).await shouldBe Right(())
+    }
+
     "create metadata, package objects and public assets in S3 (publish bucket)" in {
 
       // everything under `testKey` should be gone:
@@ -2473,6 +2501,22 @@ class TestPublish
           "fileType": "Json"
         }
       ]}""")
+      .leftMap(e => {
+        println(
+          s"Error uploading s3://$s3Bucket/${s3Key + Publish.METADATA_ASSETS_FILENAME}"
+        )
+        e
+      })
+      .isRight shouldBe true
+  }
+
+  def runMetadataPublishEmptyManifestList(
+    s3Bucket: String,
+    s3Key: String
+  ): Unit = {
+    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME, s"""{
+      "manifests": []
+      }""")
       .leftMap(e => {
         println(
           s"Error uploading s3://$s3Bucket/${s3Key + Publish.METADATA_ASSETS_FILENAME}"
