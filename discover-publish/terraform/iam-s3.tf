@@ -21,6 +21,8 @@ data "aws_iam_policy_document" "discover_publish_s3_read_access_iam_policy_docum
       "s3:GetObjectAttributes",
       "s3:GetObjectVersion",
       "s3:GetObjectVersionAttributes",
+      "s3:GetObjectTagging",
+      "s3:GetObjectVersionTagging",
       "s3:ListBucket",
       "s3:ListBucketVersions"
     ]
@@ -94,8 +96,12 @@ data "aws_iam_policy_document" "discover_publish_s3_write_access_iam_policy_docu
 
     actions = [
       "s3:PutObject",
+      "s3:PutObjectTagging",
+      "s3:PutObjectVersionTagging",
       "s3:DeleteObject",
       "s3:DeleteObjectVersion",
+      "s3:DeleteObjectTagging",
+      "s3:DeleteObjectVersionTagging",
       "s3:ListBucketMultipartUploads",
       "s3:ListMultipartUploadParts",
       "s3:AbortMultipartUpload"
