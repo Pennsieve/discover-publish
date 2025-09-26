@@ -29,6 +29,7 @@ import software.amazon.awssdk.services.s3.model.{
   CreateMultipartUploadRequest,
   GetObjectAttributesRequest,
   ObjectAttributes,
+  RequestPayer,
   UploadPartCopyRequest
 }
 
@@ -74,6 +75,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       .bucket(bucket)
       .key(key)
       .objectAttributes(List(ObjectAttributes.OBJECT_SIZE).asJava)
+      .requestPayer(RequestPayer.REQUESTER)
       .build()
     val getObjectAttributesResponse = {
       s3Client.getObjectAttributes(getObjectAttributesRequest)
@@ -111,6 +113,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       .checksumAlgorithm(ChecksumAlgorithm.SHA256)
       .bucket(bucket)
       .key(key)
+      .requestPayer(RequestPayer.REQUESTER)
       .build()
 
     val createMultipartUploadResponse =
@@ -139,6 +142,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       .destinationKey(destinationKey)
       .copySourceRange(part)
       .partNumber(index)
+      .requestPayer(RequestPayer.REQUESTER)
       .build()
 
     val uploadPartCopyResponse =
@@ -172,6 +176,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       .key(key)
       .uploadId(uploadId)
       .multipartUpload(completedMultipartUpload)
+      .requestPayer(RequestPayer.REQUESTER)
       .build()
 
     val completeMultipartUploadResponse =
@@ -241,6 +246,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       .destinationBucket(request.destinationBucket)
       .destinationKey(request.destinationKey)
       .checksumAlgorithm(ChecksumAlgorithm.SHA256)
+      .requestPayer(RequestPayer.REQUESTER)
       .build()
 
     val copyObjectResponse = s3Client.copyObject(copyObjectRequest)
