@@ -23,10 +23,12 @@ import akka.stream.scaladsl.{ Sink, Source }
 import cats.data.EitherT
 import cats.implicits._
 import com.amazonaws.services.s3.model.{ Bucket, S3ObjectSummary }
+import com.pennsieve.audit.middleware.TraceId
 import com.pennsieve.clients.{ DatasetAssetClient, S3DatasetAssetClient }
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.core.utilities._
 import com.pennsieve.domain.{ CoreError, ServiceError }
+import com.pennsieve.managers.StorageManager
 import com.pennsieve.models._
 import com.pennsieve.publish.models.{ CopyAction, DeleteAction, KeepAction }
 import com.pennsieve.test._
@@ -52,6 +54,7 @@ import scala.collection.mutable
 import scala.concurrent.{ ExecutionContext, Future }
 import scala.util.Try
 import java.io.InputStream
+import java.util.UUID
 
 case class InsecureDatabaseContainer(config: Config, organization: Organization)
     extends Container
@@ -1210,6 +1213,98 @@ class TestPublish
       Publish.sizeCountingOwnSize(9995) shouldBe 9999
       Publish.sizeCountingOwnSize(9996) shouldBe 10001
       Publish.sizeCountingOwnSize(9997) shouldBe 10002
+    }
+
+    "not publish deleted packages and files" in {
+      // create package tree:
+      //
+      // primary
+      // |
+      // +-----> sub-1
+      // |       |
+      // |       +-----> sub-1.dat
+      // |
+      // +-----> sub-2                 <- __DELETED__
+      //         |
+      //         +-----> sub-2.dat     <- not deleted
+      //
+      val primaryFolderName = "primary"
+      val primaryFolderPackage = createPackage(
+        testUser,
+        name = primaryFolderName,
+        `type` = PackageType.Collection
+      )
+
+      val sub1FolderName = "sub-1"
+      val sub1FolderPackage = createPackage(
+        testUser,
+        name = sub1FolderName,
+        `type` = PackageType.Collection,
+        parent = Some(primaryFolderPackage)
+      )
+
+      val sub1DataFileName = "sub-1.dat"
+      val sub1DataFilePackage = createPackage(
+        testUser,
+        name = sub1DataFileName,
+        `type` = PackageType.Unsupported,
+        parent = Some(sub1FolderPackage)
+      )
+
+      val sub1DataFile = createFile(
+        `package` = sub1DataFilePackage,
+        name = sub1DataFileName,
+        s3Key =
+          s"O${testOrganization.id}/D${testDataset.id}/${UUID.randomUUID()}/${sub1DataFileName}",
+        content = "=0000-0000-0000-0000-0000-0000-0000-0000",
+        size = 40,
+        fileType = FileType.Data
+      )
+
+      val sub2FolderName = "sub-2"
+      val sub2FolderPackage = createPackage(
+        testUser,
+        name = sub2FolderName,
+        `type` = PackageType.Collection,
+        parent = Some(primaryFolderPackage)
+      )
+
+      val sub2DataFileName = "sub-2.dat"
+      val sub2DataFilePackage = createPackage(
+        testUser,
+        name = sub2DataFileName,
+        `type` = PackageType.Unsupported,
+        parent = Some(sub2FolderPackage)
+      )
+
+      val sub2DataFile = createFile(
+        `package` = sub2DataFilePackage,
+        name = sub2DataFileName,
+        s3Key =
+          s"O${testOrganization.id}/D${testDataset.id}/${UUID.randomUUID()}/${sub2DataFileName}",
+        content = "=0000-0000-0000-0000-0000-0000-0000-0000",
+        size = 40,
+        fileType = FileType.Data
+      )
+
+      // delete sub-2 (but not sub-2.dat)
+      val _ = deletePackage(sub2FolderPackage)
+
+      // publish
+      Publish.publishAssets(publishContainer).await.isRight shouldBe true
+
+      // get a listing of the Publish Bucket
+      val bucketListing = listBucket(publishBucket).toList
+
+      // check that `sub-1.dat` was published
+      bucketListing.exists { s =>
+        s.getKey.contains(sub1DataFileName)
+      } shouldBe true
+
+      // check that `sub-2.dat` was not published
+      bucketListing.exists { s =>
+        s.getKey.contains(sub2DataFileName)
+      } shouldBe false
     }
   }
 
@@ -2553,6 +2648,14 @@ class TestPublish
       dataset,
       parent
     )
+
+  def deletePackage(`package`: Package): Unit = {
+    val storageManager =
+      new StorageManager(publishContainer.db, testOrganization)
+    val packagesManager = publishContainer.packageManager
+    val traceId = TraceId("test-delete-packge")
+    packagesManager.delete(traceId, `package`)(storageManager).await.value
+  }
 
   def createFile(
     `package`: Package,
