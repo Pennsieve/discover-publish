@@ -1216,7 +1216,18 @@ class TestPublish
     }
 
     "not publish deleted packages and files" in {
-      // create package tree: primary -> sub-1, sub-2 -> sub-1.dat, sub-2.dat
+      // create package tree:
+      //
+      // primary
+      // |
+      // +-----> sub-1
+      // |       |
+      // |       +-----> sub-1.dat
+      // |
+      // +-----> sub-2                 <- __DELETED__
+      //         |
+      //         +-----> sub-2.dat     <- not deleted
+      //
       val primaryFolderName = "primary"
       val primaryFolderPackage = createPackage(
         testUser,
@@ -1282,8 +1293,15 @@ class TestPublish
       // publish
       Publish.publishAssets(publishContainer).await.isRight shouldBe true
 
-      // check that sub-2.dat was published
+      // get a listing of the Publish Bucket
       val bucketListing = listBucket(publishBucket).toList
+
+      // check that `sub-1.dat` was published
+      bucketListing.exists { s =>
+        s.getKey.contains(sub1DataFileName)
+      } shouldBe true
+
+      // check that `sub-2.dat` was not published
       bucketListing.exists { s =>
         s.getKey.contains(sub2DataFileName)
       } shouldBe false
