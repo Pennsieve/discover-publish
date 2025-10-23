@@ -65,8 +65,6 @@ object Publish extends StrictLogging {
 
   val PUBLISH_ASSETS_FILENAME: String = "publish.json"
 
-  val GRAPH_ASSETS_FILENAME: String = "graph.json"
-
   val METADATA_ASSETS_FILENAME: String = "metadata_intermediate_manifest.json"
 
   val OUTPUT_FILENAME: String = "outputs.json"
@@ -101,9 +99,6 @@ object Publish extends StrictLogging {
   private def publishedAssetsKey(config: PublishContainerConfig): String =
     assetKey(config, PUBLISH_ASSETS_FILENAME)
 
-  private def graphManifestKey(config: PublishContainerConfig): String =
-    assetKey(config, GRAPH_ASSETS_FILENAME)
-
   private def metadataManifestKey(config: PublishContainerConfig): String =
     assetKey(config, METADATA_ASSETS_FILENAME)
 
@@ -123,11 +118,7 @@ object Publish extends StrictLogging {
     * be deleted.
     */
   def temporaryFiles: Seq[String] =
-    Seq(
-      PUBLISH_ASSETS_FILENAME,
-      GRAPH_ASSETS_FILENAME,
-      METADATA_ASSETS_FILENAME
-    )
+    Seq(PUBLISH_ASSETS_FILENAME, METADATA_ASSETS_FILENAME)
 
   def publishAssets(
     container: PublishContainer
@@ -151,7 +142,7 @@ object Publish extends StrictLogging {
       manifest <- getDatatsetManifest(container)
 
       // filter out where sourcePackageId.isEmpty because these are Files not attached to Packages
-      // (i.e., readme.md, banner.jpg, changelog.md, the manifest.json, and Model export files)
+      // (i.e., readme.md, banner.jpg, changelog.md, the manifest.json, and metadata export files)
       previousFiles = manifest.files.filterNot(_.sourcePackageId.isEmpty).map {
         previousFile =>
           logger.debug(s"publishAssets5x() previousFile: ${previousFile}")
@@ -274,11 +265,6 @@ object Publish extends StrictLogging {
         publishedAssetsKey(container)
       )
 
-      graph <- downloadFromS3[ExportedGraphResult](
-        container,
-        graphManifestKey(container)
-      )
-
       metadata <- downloadFromS3[ExportedMetadataResult](
         container,
         metadataManifestKey(container)
@@ -290,7 +276,7 @@ object Publish extends StrictLogging {
 
       manifestVersion <- writeManifest(
         container,
-        assets.bannerManifest.manifest :: assets.readmeManifest.manifest :: assets.changelogManifest.manifest :: graph.manifests ++ metadata.manifests ++ assets.packageManifests
+        assets.bannerManifest.manifest :: assets.readmeManifest.manifest :: assets.changelogManifest.manifest :: metadata.manifests ++ assets.packageManifests
           .map(_.manifest)
       )
 
@@ -312,13 +298,13 @@ object Publish extends StrictLogging {
 
 // handled by s3 cleanup lambda
 //      _ = logger.info(
-//        s"Deleting temporary files: $PUBLISH_ASSETS_FILENAME, $GRAPH_ASSETS_FILENAME, $METADATA_ASSETS_FILENAME"
+//        s"Deleting temporary files: $PUBLISH_ASSETS_FILENAME, $METADATA_ASSETS_FILENAME"
 //      )
 //
 //      _ <- container.s3
 //        .deleteObjectsByKeys(
 //          container.s3Bucket,
-//          Seq(publishedAssetsKey(container), graphManifestKey(container), metadataManifestKey(container)),
+//          Seq(publishedAssetsKey(container), metadataManifestKey(container)),
 //          isRequesterPays = true
 //        )
 //        .toEitherT[Future]

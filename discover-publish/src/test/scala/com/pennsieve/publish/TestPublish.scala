@@ -662,7 +662,6 @@ class TestPublish
         ).toEither.isRight
       )
 
-      runModelPublish(publishBucket, testKey)
       runMetadataPublish(publishBucket, testKey)
 
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
@@ -682,7 +681,6 @@ class TestPublish
         ).toEither.isRight
       )
 
-      runModelPublish(publishBucket, testKey)
       runMetadataPublishEmptyManifestList(publishBucket, testKey)
 
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
@@ -696,7 +694,6 @@ class TestPublish
         ).toEither.isRight
       )
 
-      runModelPublish(publishBucket, testKey)
       //runMetadataPublish(publishBucket, testKey)
 
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
@@ -755,7 +752,6 @@ class TestPublish
       ).toEither
       assert(assetsJson.isRight)
 
-      runModelPublish(publishBucket, testKey)
       runMetadataPublish(publishBucket, testKey)
 
       // Finalizing the jobs should write an `output.json` and delete all other
@@ -766,9 +762,6 @@ class TestPublish
       )
 //      assert(
 //        Try(downloadFile(publishBucket, testKey + "publish.json")).toEither.isLeft
-//      )
-//      assert(
-//        Try(downloadFile(publishBucket, testKey + "graph.json")).toEither.isLeft
 //      )
 //      assert(
 //        Try(downloadFile(publishBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
@@ -783,7 +776,7 @@ class TestPublish
       tempResults.changelogKey shouldBe testKey + Publish.CHANGELOG_FILENAME
       tempResults.totalSize > 0 shouldBe true
 
-      // should export package, graph, and metadata files to publish bucket
+      // should export package and metadata files to publish bucket
       downloadFile(publishBucket, testKey + "files/pkg1.txt") shouldBe "data data"
       downloadFile(publishBucket, testKey + "files/pkg2/file2.dcm") shouldBe "atad atad"
       downloadFile(publishBucket, testKey + "files/pkg2/file3.dcm") shouldBe "double data"
@@ -793,9 +786,6 @@ class TestPublish
           publishBucket,
           testKey + "metadata/models/patient/versions/1/schema.json"
         )
-
-      val schemaJson =
-        downloadFile(publishBucket, testKey + "metadata/schema.json")
 
       val bannerJpg =
         downloadFile(publishBucket, testKey + s"/${Publish.BANNER_FILENAME}")
@@ -884,12 +874,6 @@ class TestPublish
             ),
             FileManifest(
               "schema.json",
-              "metadata/schema.json",
-              schemaJson.length,
-              FileType.Json
-            ),
-            FileManifest(
-              "schema.json",
               "metadata/models/patient/versions/1/schema.json",
               metadataSchemaJson.length,
               FileType.Json
@@ -951,7 +935,6 @@ class TestPublish
       ).toEither
       assert(assetsJson.isRight)
 
-      runModelPublish(embargoBucket, testKey)
       runMetadataPublish(embargoBucket, testKey)
 
       // Finalizing the jobs should write an `output.json` and delete all other
@@ -962,9 +945,6 @@ class TestPublish
       )
 //      assert(
 //        Try(downloadFile(embargoBucket, testKey + "publish.json")).toEither.isLeft
-//      )
-//      assert(
-//        Try(downloadFile(embargoBucket, testKey + "graph.json")).toEither.isLeft
 //      )
 //      assert(
 //        Try(downloadFile(embargoBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
@@ -979,7 +959,7 @@ class TestPublish
       tempResults.changelogKey shouldBe testKey + Publish.CHANGELOG_FILENAME
       tempResults.totalSize > 0 shouldBe true
 
-      // should export package, graph and metadata files to publish bucket
+      // should export package and metadata files to publish bucket
       downloadFile(embargoBucket, testKey + "files/pkg1.txt") shouldBe "data data"
       downloadFile(embargoBucket, testKey + "files/pkg2/file2.dcm") shouldBe "atad atad"
       downloadFile(embargoBucket, testKey + "files/pkg2/file3.dcm") shouldBe "double data"
@@ -989,9 +969,6 @@ class TestPublish
           embargoBucket,
           testKey + "metadata/models/patient/versions/1/schema.json"
         )
-
-      val schemaJson =
-        downloadFile(embargoBucket, testKey + "metadata/schema.json")
 
       val bannerJpg =
         downloadFile(embargoBucket, testKey + s"/${Publish.BANNER_FILENAME}")
@@ -1080,12 +1057,6 @@ class TestPublish
             ),
             FileManifest(
               "schema.json",
-              "metadata/schema.json",
-              schemaJson.length,
-              FileType.Json
-            ),
-            FileManifest(
-              "schema.json",
               "metadata/models/patient/versions/1/schema.json",
               metadataSchemaJson.length,
               FileType.Json
@@ -1164,14 +1135,13 @@ class TestPublish
       )
 
       Publish.publishAssets(publishContainer).await.isRight shouldBe true
-      runModelPublish(publishBucket, testKey)
       runMetadataPublish(publishBucket, testKey)
 
       // Finalizing the jobs should write an `output.json` and delete all other
       // temporary files
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
 
-      // should export package and graph files to publish bucket
+      // should export package and metadata files to publish bucket
       downloadFile(publishBucket, testKey + "files/pkg1.txt") shouldBe "data data"
       downloadFile(publishBucket, testKey + "files/pkg2/file2.dcm") shouldBe "atad atad"
       // should ignore graph file (file3.dcm)
@@ -1191,7 +1161,6 @@ class TestPublish
           "files/pkg1.txt",
           "files/pkg4.pdf",
           Publish.README_FILENAME,
-          "metadata/schema.json",
           "metadata/models/patient/versions/1/schema.json"
         )
       )
@@ -2399,12 +2368,6 @@ class TestPublish
 //          |      "s3VersionId" : "x16k1IhceSfRU5KcUUmzEMhZG533sI0I"
 //          |    },
 //          |    {
-//          |      "name" : "schema.json",
-//          |      "path" : "metadata/schema.json",
-//          |      "size" : 567,
-//          |      "fileType" : "Json",
-//          |      "s3VersionId" : "5Tiv4AcFDueHJheHibe.XxZDglRnMixq"
-//          |    },
 //          |    {
 //          |      "name" : "test-001.dat",
 //          |      "path" : "files/first/test-001.dat",
@@ -2510,43 +2473,6 @@ class TestPublish
     } finally {
       stream.close()
     }
-  }
-
-  /**
-    * Mock run `model-publish`, publishing the minimal required graph files to S3.
-    */
-  def runModelPublish(s3Bucket: String, s3Key: String): Unit = {
-
-    val schemaJsonKey = s3Key + "metadata/schema.json"
-
-    val schemaJson = s"""{
-      "models": [],
-      "relationships": []
-    }"""
-
-    s3.putObject(s3Bucket, schemaJsonKey, schemaJson)
-      .leftMap(e => {
-        println(s"Error uploading s3://$s3Bucket/$schemaJsonKey")
-        e
-      })
-      .isRight shouldBe true
-
-    // Basic graph manifests
-    s3.putObject(s3Bucket, s3Key + Publish.GRAPH_ASSETS_FILENAME, s"""{
-      "manifests": [
-        {
-          "path": "metadata/schema.json",
-          "size": ${schemaJson.length},
-          "fileType": "Json"
-        }
-      ]}""")
-      .leftMap(e => {
-        println(
-          s"Error uploading s3://$s3Bucket/${s3Key + Publish.GRAPH_ASSETS_FILENAME}"
-        )
-        e
-      })
-      .isRight shouldBe true
   }
 
   /**

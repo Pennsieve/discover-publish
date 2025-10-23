@@ -82,15 +82,6 @@ object PublishAssetResult {
     )
 }
 
-case class ExportedGraphResult(manifests: List[FileManifest])
-
-object ExportedGraphResult {
-  implicit val encoder: Encoder[ExportedGraphResult] =
-    deriveEncoder[ExportedGraphResult]
-  implicit val decoder: Decoder[ExportedGraphResult] =
-    deriveDecoder[ExportedGraphResult]
-}
-
 case class ExportedMetadataResult(manifests: List[FileManifest])
 
 object ExportedMetadataResult {

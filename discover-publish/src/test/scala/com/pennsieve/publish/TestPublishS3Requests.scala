@@ -45,7 +45,6 @@ import com.pennsieve.models.{
   User
 }
 import com.pennsieve.publish.models.{
-  ExportedGraphResult,
   ExportedMetadataResult,
   PublishAssetResult
 }
@@ -262,9 +261,6 @@ class TestPublishS3Requests
       val publishAssetResultObject =
         mockS3Object(publishAssetResult.asJson.toString)
 
-      val exportedGraphResultObject =
-        mockS3Object(ExportedGraphResult(Nil).asJson.toString)
-
       val exportedMetadataResultObject =
         mockS3Object(ExportedMetadataResult(Nil).asJson.toString)
 
@@ -279,8 +275,6 @@ class TestPublishS3Requests
         .onCall { r: GetObjectRequest =>
           if (r.getKey.endsWith(Publish.PUBLISH_ASSETS_FILENAME)) {
             publishAssetResultObject
-          } else if (r.getKey.endsWith(Publish.GRAPH_ASSETS_FILENAME)) {
-            exportedGraphResultObject
           } else if (r.getKey.endsWith(Publish.METADATA_ASSETS_FILENAME)) {
             exportedMetadataResultObject
           } else fail(s"Unexpected get object key: ${r.getKey}")
