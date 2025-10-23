@@ -101,66 +101,32 @@
         }
       ],
       "ResultPath": null,
-      "Next": "Parallel run model and metadata publish"
+      "Next": "Run metadata-publish"
     },
-    "Parallel run model and metadata publish": {
-      "Type": "Parallel",
-      "Branches": [
-        {
-          "StartAt": "Run model-publish",
-          "States": {
-            "Run model-publish": {
-              "Type": "Task",
-              "End": true,
-              "Resource": "arn:aws:states:::ecs:runTask.sync",
-              "Parameters": {
-                "LaunchType": "FARGATE",
-                "Cluster": "${fargate_ecs_cluster_arn}",
-                "TaskDefinition": "${model_publish_task_definition_family}",
-                "NetworkConfiguration": ${jsonencode(ecs_network)},
-                "Overrides": {
-                  "ContainerOverrides": [
-                    {
-                      "Name": "model-publish",
-                      "Environment": ${jsonencode(common_environment_override)}
-                    }
-                  ]
-                }
-              }
+
+    "Run metadata-publish": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::ecs:runTask.sync",
+      "Parameters": {
+        "LaunchType": "FARGATE",
+        "Cluster": "${fargate_ecs_cluster_arn}",
+        "TaskDefinition": "${metadata_publish_task_definition_family}",
+        "NetworkConfiguration": ${jsonencode(ecs_network)},
+        "Overrides": {
+          "ContainerOverrides": [
+            {
+              "Name": "metadata-publish",
+              "Environment": ${jsonencode(common_environment_override)}
+            },
+            {
+              "Name": "metadata-publish-postgres",
+              "Environment": [
+                { "Name": "S3_PGDUMP_KEY", "Value.$": "$.s3_pgdump_key"}
+              ]
             }
-          }
-        },
-        {
-          "StartAt": "Run metadata-publish",
-          "States": {
-            "Run metadata-publish": {
-              "Type": "Task",
-              "End": true,
-              "Resource": "arn:aws:states:::ecs:runTask.sync",
-              "Parameters": {
-                "LaunchType": "FARGATE",
-                "Cluster": "${fargate_ecs_cluster_arn}",
-                "TaskDefinition": "${metadata_publish_task_definition_family}",
-                "NetworkConfiguration": ${jsonencode(ecs_network)},
-                "Overrides": {
-                  "ContainerOverrides": [
-                    {
-                      "Name": "metadata-publish",
-                      "Environment": ${jsonencode(common_environment_override)}
-                    },
-                    {
-                      "Name": "metadata-publish-postgres",
-                      "Environment": [
-                        { "Name": "S3_PGDUMP_KEY", "Value.$": "$.s3_pgdump_key"}
-                      ]
-                    }
-                  ]
-                }
-              }
-            }
-          }
+          ]
         }
-      ],
+      },
       "Catch": [
         {
           "ErrorEquals": [ "States.ALL" ],
@@ -171,6 +137,7 @@
       "ResultPath": null,
       "Next": "Run discover-publish:finalize"
     },
+
     "Run discover-publish:finalize": {
       "Type": "Task",
       "Resource": "arn:aws:states:::ecs:runTask.sync",
