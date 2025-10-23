@@ -32,7 +32,6 @@ locals {
     discover_pgdump_lambda_arn              = data.terraform_remote_state.discover_pgdump_lambda.outputs.lambda_function_arn
 
     discover_publish_task_definition_family = local.discover_publish_task_definition_family
-    model_publish_task_definition_family    = local.model_publish_task_definition_family
     metadata_publish_task_definition_family = local.metadata_publish_task_definition_family
 
     common_environment_override             = local.common_environment_override

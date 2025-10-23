@@ -146,7 +146,6 @@ data "aws_iam_policy_document" "sfn_state_machine_iam_policy_document" {
 
     resources = [
       local.discover_publish_task_definition_arn_wildcard_version,
-      local.model_publish_task_definition_arn_wildcard_version,
       local.metadata_publish_task_definition_arn_wildcard_version,
     ]
   }
@@ -204,7 +203,6 @@ data "aws_iam_policy_document" "sfn_state_machine_iam_policy_document" {
 
     resources = [
       aws_iam_role.ecs_task_iam_role.arn,
-      data.terraform_remote_state.model_publish.outputs.ecs_task_iam_role_arn,
       data.terraform_remote_state.metadata_publish.outputs.metadata_publish_ecs_task_iam_role_arn,
     ]
   }
