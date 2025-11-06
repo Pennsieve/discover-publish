@@ -98,7 +98,8 @@ case class PublishContainer(
   collections: List[PublishedCollection],
   externalPublications: List[PublishedExternalPublication],
   datasetAssetClient: DatasetAssetClient,
-  workflowId: Long
+  workflowId: Long,
+  expectPrevious: Boolean
 ) extends Container
     with PublishContainerConfig
     with OrganizationContainer
@@ -142,7 +143,8 @@ object PublishContainer {
     contributors: String,
     collections: String,
     externalPublications: String,
-    workflowId: Long
+    workflowId: Long,
+    expectPrevious: Boolean
   )(implicit
     executionContext: ExecutionContext
   ): Future[PublishContainer] = {
@@ -214,7 +216,8 @@ object PublishContainer {
         collections = publishedCollections,
         externalPublications = publishedExternalPublications,
         datasetAssetClient = datasetAssetClient,
-        workflowId = workflowId
+        workflowId = workflowId,
+        expectPrevious = expectPrevious
       )
   }
 }
