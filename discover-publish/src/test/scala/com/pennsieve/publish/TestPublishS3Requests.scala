@@ -19,8 +19,6 @@ package com.pennsieve.publish
 import akka.actor.ActorSystem
 import com.amazonaws.services.s3.{ model, AmazonS3 }
 import com.amazonaws.services.s3.model.{
-  DeleteObjectsRequest,
-  GetObjectMetadataRequest,
   GetObjectRequest,
   ObjectMetadata,
   PutObjectRequest,
@@ -67,8 +65,6 @@ import org.mockserver.model.HttpResponse.response
 import org.scalamock.matchers.ArgCapture.CaptureAll
 import org.scalatest.{ BeforeAndAfterAll, BeforeAndAfterEach }
 import org.scalatest.Inspectors._
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
-import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.{
   CopyObjectRequest,
@@ -301,7 +297,6 @@ class TestPublishS3Requests
 
       val getObjectCapture = CaptureAll[GetObjectRequest]()
       val putObjectCapture = CaptureAll[PutObjectRequest]()
-      val deleteObjectsCapture = CaptureAll[DeleteObjectsRequest]()
 
       (mockAmazonS3
         .getObject(_: GetObjectRequest))
@@ -325,10 +320,6 @@ class TestPublishS3Requests
           result
         })
 
-      //      (mockAmazonS3
-      //        .deleteObjects(_: DeleteObjectsRequest))
-      //        .expects(capture(deleteObjectsCapture))
-
       Publish
         .finalizeDataset(publishContainer)
         .await should be a right
@@ -338,11 +329,6 @@ class TestPublishS3Requests
         _.isRequesterPays should be(true)
       }
       forAll(putObjectCapture.values.filter(_.getBucketName == publishBucket)) {
-        _.isRequesterPays should be(true)
-      }
-      forAll(
-        deleteObjectsCapture.values.filter(_.getBucketName == publishBucket)
-      ) {
         _.isRequesterPays should be(true)
       }
 
