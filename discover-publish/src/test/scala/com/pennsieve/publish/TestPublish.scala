@@ -19,7 +19,7 @@ package com.pennsieve.publish
 import akka.stream.scaladsl.Keep
 import akka.stream.testkit.scaladsl.TestSink
 import akka.actor.ActorSystem
-import akka.stream.scaladsl.{ Sink, Source }
+import akka.stream.scaladsl.{Sink, Source}
 import cats.data.EitherT
 import cats.implicits._
 import com.amazonaws.services.s3.model.{
@@ -29,26 +29,26 @@ import com.amazonaws.services.s3.model.{
   SetBucketVersioningConfigurationRequest
 }
 import com.pennsieve.audit.middleware.TraceId
-import com.pennsieve.clients.{ DatasetAssetClient, S3DatasetAssetClient }
+import com.pennsieve.clients.{DatasetAssetClient, S3DatasetAssetClient}
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.core.utilities._
-import com.pennsieve.domain.{ CoreError, ServiceError }
+import com.pennsieve.domain.{CoreError, ServiceError}
 import com.pennsieve.managers.StorageManager
 import com.pennsieve.models._
-import com.pennsieve.publish.models.{ CopyAction, DeleteAction, KeepAction }
+import com.pennsieve.publish.models.{CopyAction, DeleteAction, KeepAction}
 import com.pennsieve.test._
 import com.pennsieve.test.helpers._
 import org.scalatest.EitherValues._
 import com.pennsieve.traits.PostgresProfile.api._
 import com.pennsieve.utilities.Container
-import com.typesafe.config.{ Config, ConfigFactory }
+import com.typesafe.config.{Config, ConfigFactory}
 import io.circe.Encoder
 import io.circe.parser.decode
 import io.circe.syntax._
 
 import java.time.LocalDate
 import org.apache.commons.io.IOUtils
-import org.scalatest.{ Assertion, BeforeAndAfterAll, BeforeAndAfterEach, Suite }
+import org.scalatest.{Assertion, BeforeAndAfterAll, BeforeAndAfterEach, Suite}
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
@@ -57,13 +57,13 @@ import software.amazon.awssdk.services.s3.S3Client
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
-import scala.concurrent.{ ExecutionContext, Future }
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Try
 import java.io.InputStream
 import java.util.UUID
 
 case class InsecureDatabaseContainer(config: Config, organization: Organization)
-    extends Container
+  extends Container
     with DatabaseContainer
     with UserManagerContainer
     with OrganizationContainer
@@ -74,7 +74,7 @@ case class InsecureDatabaseContainer(config: Config, organization: Organization)
 }
 
 class TestPublish
-    extends AnyWordSpec
+  extends AnyWordSpec
     with Matchers
     with PersistantTestContainers
     with DiscoverPublishS3DockerContainer
@@ -113,21 +113,21 @@ class TestPublish
   var datasetAssetClient: DatasetAssetClient = _
 
   /**
-    * Run prior to publishAssets to clean `${container.s3Bucket}/${container.s3Key}` of existing objects before
-    * starting the publishing process. This is used to simulate discover-s3clean behavior prior to the discover-publish
-    * step function workflow being invoked.
-    *
-    * @param container
-    * @param executionContext
-    * @param system
-    * @return
-    */
+   * Run prior to publishAssets to clean `${container.s3Bucket}/${container.s3Key}` of existing objects before
+   * starting the publishing process. This is used to simulate discover-s3clean behavior prior to the discover-publish
+   * step function workflow being invoked.
+   *
+   * @param container
+   * @param executionContext
+   * @param system
+   * @return
+   */
   def s3PrePublishCleanObjects(
-    container: PublishContainer
-  )(implicit
-    executionContext: ExecutionContext,
-    system: ActorSystem
-  ): EitherT[Future, CoreError, Unit] = {
+                                container: PublishContainer
+                              )(implicit
+                                executionContext: ExecutionContext,
+                                system: ActorSystem
+                              ): EitherT[Future, CoreError, Unit] = {
     container.s3
       .deleteObjectsByPrefix(container.s3Bucket, container.s3Key)
       .toEitherT[Future]
@@ -2522,9 +2522,10 @@ class TestPublish
   }
 
   /**
-    * Delete all objects from bucket, and delete the bucket itself
-    */
+   * Delete all objects from bucket, and delete the bucket itself
+   */
   def deleteBucket(bucket: String): Assertion = {
+    //TODO delete all versions now that versioning is enabled.
     listBucket(bucket)
       .map(o => s3.deleteObject(bucket, o.getKey).isRight shouldBe true)
     s3.deleteBucket(bucket).isRight shouldBe true
@@ -2538,8 +2539,8 @@ class TestPublish
       .asScala
 
   /**
-    * Read file contents from S3 as a string.
-    */
+   * Read file contents from S3 as a string.
+   */
   def downloadFile(s3Bucket: String, s3Key: String): String = {
     val stream: InputStream = s3
       .getObject(s3Bucket, s3Key)
@@ -2558,8 +2559,8 @@ class TestPublish
   }
 
   /**
-    * Mock run `metadata-publish` publishing just one metadata model schema
-    */
+   * Mock run `metadata-publish` publishing just one metadata model schema
+   */
   def runMetadataPublish(s3Bucket: String, s3Key: String): Unit = {
 
     val schemaJsonKey = s3Key + "metadata/models/patient/versions/1/schema.json"
@@ -2597,7 +2598,8 @@ class TestPublish
       })
       .isRight shouldBe true
 
-    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME, s"""{
+    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME,
+        s"""{
       "manifests": [
         {
           "path": "metadata/models/patient/versions/1/schema.json",
@@ -2615,10 +2617,11 @@ class TestPublish
   }
 
   def runMetadataPublishEmptyManifestList(
-    s3Bucket: String,
-    s3Key: String
-  ): Unit = {
-    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME, s"""{
+                                           s3Bucket: String,
+                                           s3Key: String
+                                         ): Unit = {
+    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME,
+        s"""{
       "manifests": []
       }""")
       .leftMap(e => {
@@ -2631,22 +2634,22 @@ class TestPublish
   }
 
   def setDatasetIgnoreFiles(
-    ignoreFiles: Seq[DatasetIgnoreFile]
-  ): Seq[DatasetIgnoreFile] =
+                             ignoreFiles: Seq[DatasetIgnoreFile]
+                           ): Seq[DatasetIgnoreFile] =
     publishContainer.datasetManager
       .setIgnoreFiles(publishContainer.dataset, ignoreFiles)
       .await
       .value
 
   def createPackage(
-    user: User,
-    name: String = generateRandomString(),
-    nodeId: String = NodeCodes.generateId(NodeCodes.packageCode),
-    `type`: PackageType = PackageType.Text,
-    state: PackageState = PackageState.READY,
-    dataset: Dataset = testDataset,
-    parent: Option[Package] = None
-  ): Package =
+                     user: User,
+                     name: String = generateRandomString(),
+                     nodeId: String = NodeCodes.generateId(NodeCodes.packageCode),
+                     `type`: PackageType = PackageType.Text,
+                     state: PackageState = PackageState.READY,
+                     dataset: Dataset = testDataset,
+                     parent: Option[Package] = None
+                   ): Package =
     createPackageInDb(
       databaseContainer,
       user,
@@ -2667,19 +2670,19 @@ class TestPublish
   }
 
   def createFile(
-    `package`: Package,
-    name: String = generateRandomString(),
-    s3Bucket: String = sourceBucket,
-    s3Key: String = "key/" + generateRandomString() + ".txt",
-    fileType: FileType = FileType.Text,
-    objectType: FileObjectType = FileObjectType.Source,
-    processingState: FileProcessingState = FileProcessingState.Processed,
-    size: Long = 0,
-    content: String = generateRandomString(),
-    uploadedState: Option[FileState] = None
-  )(implicit
-    publishContainer: PublishContainer
-  ): File =
+                  `package`: Package,
+                  name: String = generateRandomString(),
+                  s3Bucket: String = sourceBucket,
+                  s3Key: String = "key/" + generateRandomString() + ".txt",
+                  fileType: FileType = FileType.Text,
+                  objectType: FileObjectType = FileObjectType.Source,
+                  processingState: FileProcessingState = FileProcessingState.Processed,
+                  size: Long = 0,
+                  content: String = generateRandomString(),
+                  uploadedState: Option[FileState] = None
+                )(implicit
+                  publishContainer: PublishContainer
+                ): File =
     createFileS3Optional(
       publishContainer.fileManager,
       `package`,
@@ -2696,10 +2699,10 @@ class TestPublish
     )
 
   def s3FilesExistUnderKey(
-    s3Bucket: String,
-    s3KeyPrefix: String,
-    matchExact: Boolean = false
-  ): Boolean = {
+                            s3Bucket: String,
+                            s3KeyPrefix: String,
+                            matchExact: Boolean = false
+                          ): Boolean = {
     val usePrefix = if (matchExact) {
       s3KeyPrefix
     } else {
@@ -2716,12 +2719,12 @@ class TestPublish
   }
 
   def uploadManifest(
-    s3Bucket: String,
-    s3Key: String,
-    manifest: DatasetMetadataV5_0
-  )(implicit
-    encoder: Encoder[DatasetMetadataV5_0]
-  ): Unit = {
+                      s3Bucket: String,
+                      s3Key: String,
+                      manifest: DatasetMetadataV5_0
+                    )(implicit
+                      encoder: Encoder[DatasetMetadataV5_0]
+                    ): Unit = {
     val manifestJSON = manifest.asJson.toString()
     s3.putObject(s3Bucket, s3Key + Publish.MANIFEST_FILENAME, manifestJSON)
       .leftMap(e => {
