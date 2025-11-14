@@ -41,9 +41,6 @@ object DiscoverPublishDockerContainers {
   val postgresContainer: PostgresContainerImpl =
     new PostgresDockerContainerImpl
 
-  val postgresSeedContainer: PostgresContainerImpl =
-    new PostgresSeedDockerContainerImpl
-
   val s3Container: S3DockerContainerImpl = new S3DockerContainerImpl
 
 }
@@ -127,4 +124,10 @@ trait DiscoverPublishS3DockerContainer extends StackedDockerContainer {
   val s3Container = DiscoverPublishDockerContainers.s3Container
 
   override def stackedContainers = s3Container :: super.stackedContainers
+}
+
+trait DiscoverPublishPostgresDockerContainer extends StackedDockerContainer {
+  val postgresContainer = DiscoverPublishDockerContainers.postgresContainer
+
+  override def stackedContainers = postgresContainer :: super.stackedContainers
 }

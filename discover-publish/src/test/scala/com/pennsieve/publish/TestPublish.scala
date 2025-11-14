@@ -51,14 +51,9 @@ import org.apache.commons.io.IOUtils
 import org.scalatest.{ Assertion, BeforeAndAfterAll, BeforeAndAfterEach, Suite }
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
-import software.amazon.awssdk.core.waiters.WaiterOverrideConfiguration
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.{
-  HeadBucketRequest,
-  NoSuchBucketException
-}
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
@@ -82,8 +77,8 @@ class TestPublish
     extends AnyWordSpec
     with Matchers
     with PersistantTestContainers
-    with S3DockerContainer
-    with PostgresDockerContainer
+    with DiscoverPublishS3DockerContainer
+    with DiscoverPublishPostgresDockerContainer
     with TestDatabase
     with BeforeAndAfterEach
     with BeforeAndAfterAll
@@ -180,14 +175,12 @@ class TestPublish
 
     datasetAssetClient = new S3DatasetAssetClient(s3, assetBucket)
 
-    s3.createBucket(publishBucket).value //isRight shouldBe true
-    //val versioning = enableBucketVersioning(publishBucket)
-    //versioning.isRight shouldBe true
-    s3.createBucket(embargoBucket).value //.isRight shouldBe true
+    s3.createBucket(publishBucket).isRight shouldBe true
+    val versioning = enableBucketVersioning(publishBucket)
+    versioning.isRight shouldBe true
+    s3.createBucket(embargoBucket).isRight shouldBe true
     s3.createBucket(assetBucket).isRight shouldBe true
-    s3.createBucket(sourceBucket).value //.isRight shouldBe true
-    s3.createBucket(sourceBucket).value //.isRight shouldBe true
-    s3.createBucket(sourceBucket).value //.isRight shouldBe true
+    s3.createBucket(sourceBucket).isRight shouldBe true
 
     testUser = createUser(databaseContainer)
     testDataset = createDatasetWithAssets(
@@ -2535,25 +2528,6 @@ class TestPublish
     listBucket(bucket)
       .map(o => s3.deleteObject(bucket, o.getKey).isRight shouldBe true)
     s3.deleteBucket(bucket).isRight shouldBe true
-
-    val waiter = s3Client.waiter()
-    try {
-      val waitResponse = waiter
-        .waitUntilBucketNotExists(
-          HeadBucketRequest.builder().bucket(bucket).build(),
-          WaiterOverrideConfiguration
-            .builder()
-            .waitTimeout(java.time.Duration.ofSeconds(30))
-            .build()
-        )
-        .matched()
-        .exception()
-      waitResponse.isPresent shouldBe true
-      waitResponse.get() shouldBe a[NoSuchBucketException]
-
-    } finally {
-      waiter.close()
-    }
 
   }
 
