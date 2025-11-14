@@ -15,19 +15,23 @@
  */
 
 package com.pennsieve.publish
+
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.managers.{ DatasetStatusManager, FileManager }
 import com.pennsieve.models.{
   Dataset,
   DatasetAsset,
+  DatasetMetadataV5_0,
   DatasetState,
   DatasetStatus,
   Doi,
   File,
+  FileManifest,
   FileObjectType,
   FileProcessingState,
   FileState,
   FileType,
+  License,
   NodeCodes,
   Organization,
   Package,
@@ -36,7 +40,9 @@ import com.pennsieve.models.{
   PublishedCollection,
   PublishedContributor,
   PublishedExternalPublication,
+  ReferenceMetadataV5_0,
   RelationshipType,
+  ReleaseMetadataV5_0,
   User
 }
 import com.pennsieve.test.helpers.AwaitableImplicits.toAwaitable
@@ -45,6 +51,7 @@ import org.scalatest.Assertion
 import org.scalatest.EitherValues._
 import org.scalatest.matchers.should.Matchers
 
+import java.time.{ LocalDate, ZoneId }
 import scala.concurrent.ExecutionContext
 import scala.util.Random
 
@@ -54,7 +61,8 @@ trait ValueHelper extends Matchers {
   val embargoBucket = "test-embargo-bucket"
   val assetBucket = "test-asset-bucket"
   val assetKeyPrefix = "dataset-assets"
-  val testKey = "100/10/"
+  val testKeyV4 = "100/10/"
+  val testKeyV5 = "100/"
   val copyChunkSize = 5242880
   val copyParallelism = 5
   val testDoi: String = "10.38492/234.7"
@@ -121,6 +129,56 @@ trait ValueHelper extends Matchers {
       DatasetState.READY,
       description = description,
       statusId = statusId
+    )
+  }
+
+  def newManifest(
+    pennsieveDatasetId: Int = Random.nextInt(10000),
+    version: Int = Random.nextInt(10) + 1,
+    revision: Option[Int] = Some(Random.nextInt(10)),
+    name: String = generateRandomString(),
+    description: String = generateRandomString(),
+    creator: PublishedContributor = contributor,
+    contributors: List[PublishedContributor] = List.empty,
+    sourceOrganization: String = s"Test Organization ${Random.nextInt(100)}",
+    keywords: List[String] = List.empty,
+    datePublished: LocalDate = LocalDate.now(),
+    license: Option[License] = None,
+    `@id`: String = generateRandomString(),
+    publisher: String = "The University of Pennsylvania",
+    `@context`: String = "http://schema.org/",
+    `@type`: String = "Dataset",
+    schemaVersion: String = "http://schema.org/version/3.7/",
+    collections: Option[List[PublishedCollection]] = None,
+    relatedPublications: Option[List[PublishedExternalPublication]] = None,
+    files: List[FileManifest] = List.empty,
+    release: Option[ReleaseMetadataV5_0] = None,
+    references: Option[ReferenceMetadataV5_0] = None,
+    pennsieveSchemaVersion: String = "5.0"
+  ): DatasetMetadataV5_0 = {
+    DatasetMetadataV5_0(
+      pennsieveDatasetId = pennsieveDatasetId,
+      version = version,
+      revision = revision,
+      name = name,
+      description = description,
+      creator = creator,
+      contributors = contributors,
+      sourceOrganization = sourceOrganization,
+      keywords = keywords,
+      datePublished = datePublished,
+      license = license,
+      `@id` = `@id`,
+      publisher = publisher,
+      `@context` = `@context`,
+      `@type` = `@type`,
+      schemaVersion = schemaVersion,
+      collections = collections,
+      relatedPublications = relatedPublications,
+      files = files,
+      release = release,
+      references = references,
+      pennsieveSchemaVersion = pennsieveSchemaVersion
     )
   }
 

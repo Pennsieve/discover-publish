@@ -83,9 +83,12 @@ import scala.concurrent.ExecutionContext
   * This class is testing that all S3 requests for the publish bucket
   * are setting the requester pays header.
   *
-  * Publishing accesses S3 two ways: 1) using our own S3 which wraps an AmazonS3 and 2) using Akka's Alpakka library
-  * For 1) we use a ScalaMock in place of a real AmazonS3 and capture the requests.
-  * For 2) there is no client to mock, so we use MockServer to mock the S3 backend and
+  * Publishing accesses S3 three ways:
+  * 1) using our own S3 which wraps an AWS SDK V1 AmazonS3,
+  * 2) using an AWS SDK V2 S3Client, and
+  * 3) using Akka's Alpakka library
+  * For 1) & 2) we use ScalaMocks in place of a real AmazonS3/S3Client and capture the requests.
+  * For 3) there is no client to mock, so we use MockServer to mock the S3 backend and
   * again check all requests sent for the desired header.
   */
 class TestPublishS3Requests
@@ -103,7 +106,7 @@ class TestPublishS3Requests
 
   val testOrganization: Organization = sampleOrganization
 
-  val publishAssetResult: PublishAssetResult = PublishAssetResult(
+  val publishAssetResult: PublishAssetResult = PublishAssetResult.apply(
     externalIdToPackagePath = Map.empty,
     packageManifests = Nil,
     bannerKey = Publish.BANNER_FILENAME,
@@ -237,7 +240,7 @@ class TestPublishS3Requests
       s3Client = mockS3Client,
       s3Bucket = publishBucket,
       s3AssetBucket = assetBucket,
-      s3Key = testKey,
+      s3Key = testKeyV5,
       s3AssetKeyPrefix = assetKeyPrefix,
       s3CopyChunkSize = copyChunkSize,
       s3CopyChunkParallelism = copyParallelism,

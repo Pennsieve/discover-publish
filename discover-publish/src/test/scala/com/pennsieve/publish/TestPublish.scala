@@ -22,7 +22,12 @@ import akka.actor.ActorSystem
 import akka.stream.scaladsl.{ Sink, Source }
 import cats.data.EitherT
 import cats.implicits._
-import com.amazonaws.services.s3.model.{ Bucket, S3ObjectSummary }
+import com.amazonaws.services.s3.model.{
+  Bucket,
+  BucketVersioningConfiguration,
+  S3ObjectSummary,
+  SetBucketVersioningConfigurationRequest
+}
 import com.pennsieve.audit.middleware.TraceId
 import com.pennsieve.clients.{ DatasetAssetClient, S3DatasetAssetClient }
 import com.pennsieve.aws.s3.S3
@@ -37,6 +42,7 @@ import org.scalatest.EitherValues._
 import com.pennsieve.traits.PostgresProfile.api._
 import com.pennsieve.utilities.Container
 import com.typesafe.config.{ Config, ConfigFactory }
+import io.circe.Encoder
 import io.circe.parser.decode
 import io.circe.syntax._
 
@@ -45,9 +51,14 @@ import org.apache.commons.io.IOUtils
 import org.scalatest.{ Assertion, BeforeAndAfterAll, BeforeAndAfterEach, Suite }
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
+import software.amazon.awssdk.core.waiters.WaiterOverrideConfiguration
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.{
+  HeadBucketRequest,
+  NoSuchBucketException
+}
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
@@ -169,10 +180,14 @@ class TestPublish
 
     datasetAssetClient = new S3DatasetAssetClient(s3, assetBucket)
 
-    s3.createBucket(publishBucket).isRight shouldBe true
-    s3.createBucket(embargoBucket).isRight shouldBe true
+    s3.createBucket(publishBucket).value //isRight shouldBe true
+    //val versioning = enableBucketVersioning(publishBucket)
+    //versioning.isRight shouldBe true
+    s3.createBucket(embargoBucket).value //.isRight shouldBe true
     s3.createBucket(assetBucket).isRight shouldBe true
-    s3.createBucket(sourceBucket).isRight shouldBe true
+    s3.createBucket(sourceBucket).value //.isRight shouldBe true
+    s3.createBucket(sourceBucket).value //.isRight shouldBe true
+    s3.createBucket(sourceBucket).value //.isRight shouldBe true
 
     testUser = createUser(databaseContainer)
     testDataset = createDatasetWithAssets(
@@ -187,7 +202,7 @@ class TestPublish
         s3Client = s3Client,
         s3Bucket = publishBucket,
         s3AssetBucket = assetBucket,
-        s3Key = testKey,
+        s3Key = testKeyV5,
         s3AssetKeyPrefix = assetKeyPrefix,
         s3CopyChunkSize = copyChunkSize,
         s3CopyChunkParallelism = copyParallelism,
@@ -204,7 +219,7 @@ class TestPublish
         collections = List(collection),
         externalPublications = List(externalPublication),
         datasetAssetClient = datasetAssetClient,
-        workflowId = PublishingWorkflows.Version4
+        workflowId = PublishingWorkflows.Version5
       )
     }
 
@@ -215,7 +230,7 @@ class TestPublish
         s3Client = s3Client,
         s3Bucket = embargoBucket,
         s3AssetBucket = assetBucket,
-        s3Key = testKey,
+        s3Key = testKeyV5,
         s3AssetKeyPrefix = assetKeyPrefix,
         s3CopyChunkSize = copyChunkSize,
         s3CopyChunkParallelism = copyParallelism,
@@ -232,7 +247,7 @@ class TestPublish
         collections = List(collection),
         externalPublications = List(externalPublication),
         datasetAssetClient = datasetAssetClient,
-        workflowId = PublishingWorkflows.Version4
+        workflowId = PublishingWorkflows.Version5
       )
     }
 
@@ -248,6 +263,7 @@ class TestPublish
     deleteBucket(assetBucket)
     deleteBucket(sourceBucket)
     publishContainer.db.close()
+
   }
 
   override def afterAll(): Unit = {
@@ -655,33 +671,45 @@ class TestPublish
     }
 
     "succeed with an empty dataset" in {
-      Publish.publishAssets(publishContainer).await.isRight shouldBe true
+      uploadManifest(
+        publishContainer.s3Bucket,
+        publishContainer.s3Key,
+        newManifest(version = publishContainer.version - 1)
+      )
+      val publishAssetsResult = Publish.publishAssets(publishContainer).await
+      publishAssetsResult.isRight shouldBe true
       assert(
         Try(
-          downloadFile(publishBucket, testKey + Publish.PUBLISH_ASSETS_FILENAME)
+          downloadFile(
+            publishBucket,
+            publishContainer.s3Key + Publish.PUBLISH_ASSETS_FILENAME
+          )
         ).toEither.isRight
       )
 
-      runMetadataPublish(publishBucket, testKey)
+      runMetadataPublish(publishBucket, publishContainer.s3Key)
 
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
-//      // Ensure all temporary files should be deleted by now:
-//      for (tempFile <- Publish.temporaryFiles) {
-//        assert(
-//          Try(downloadFile(publishBucket, testKey + tempFile)).toEither.isLeft
-//        )
-//      }
+      //      // Ensure all temporary files should be deleted by now:
+      //      for (tempFile <- Publish.temporaryFiles) {
+      //        assert(
+      //          Try(downloadFile(publishBucket, testKey + tempFile)).toEither.isLeft
+      //        )
+      //      }
     }
 
     "succeed when metadata service writes a manifest file with an empty file list" in {
       Publish.publishAssets(publishContainer).await.isRight shouldBe true
       assert(
         Try(
-          downloadFile(publishBucket, testKey + Publish.PUBLISH_ASSETS_FILENAME)
+          downloadFile(
+            publishBucket,
+            publishContainer.s3Key + Publish.PUBLISH_ASSETS_FILENAME
+          )
         ).toEither.isRight
       )
 
-      runMetadataPublishEmptyManifestList(publishBucket, testKey)
+      runMetadataPublishEmptyManifestList(publishBucket, publishContainer.s3Key)
 
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
     }
@@ -690,7 +718,10 @@ class TestPublish
       Publish.publishAssets(publishContainer).await.isRight shouldBe true
       assert(
         Try(
-          downloadFile(publishBucket, testKey + Publish.PUBLISH_ASSETS_FILENAME)
+          downloadFile(
+            publishBucket,
+            publishContainer.s3Key + Publish.PUBLISH_ASSETS_FILENAME
+          )
         ).toEither.isRight
       )
 
@@ -702,19 +733,19 @@ class TestPublish
     "create metadata, package objects and public assets in S3 (publish bucket)" in {
 
       // everything under `testKey` should be gone:
-      assert(!s3FilesExistUnderKey(publishBucket, testKey))
-      assert(!s3FilesExistUnderKey(embargoBucket, testKey))
+      assert(!s3FilesExistUnderKey(publishBucket, publishContainer.s3Key))
+      assert(!s3FilesExistUnderKey(embargoBucket, publishContainer.s3Key))
 
       // seed the publish bucket:
       createS3File(
         s3,
         publishBucket,
-        s"${testKey}/delete-prefix-key/delete-file.txt"
+        s"${publishContainer.s3Key}/delete-prefix-key/delete-file.txt"
       )
       createS3File(
         s3,
         publishBucket,
-        s"${testKey}/some-other-prefix/sub-key/another-file.txt"
+        s"${publishContainer.s3Key}/some-other-prefix/sub-key/another-file.txt"
       )
 
       // Package with a single file
@@ -748,67 +779,90 @@ class TestPublish
 
       Publish.publishAssets(publishContainer).await.isRight shouldBe true
       val assetsJson = Try(
-        downloadFile(publishBucket, testKey + Publish.PUBLISH_ASSETS_FILENAME)
+        downloadFile(
+          publishBucket,
+          publishContainer.s3Key + Publish.PUBLISH_ASSETS_FILENAME
+        )
       ).toEither
       assert(assetsJson.isRight)
 
-      runMetadataPublish(publishBucket, testKey)
+      runMetadataPublish(publishBucket, publishContainer.s3Key)
 
       // Finalizing the jobs should write an `output.json` and delete all other
       // temporary files
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
       assert(
-        Try(downloadFile(publishBucket, testKey + "outputs.json")).toEither.isRight
+        Try(
+          downloadFile(publishBucket, publishContainer.s3Key + "outputs.json")
+        ).toEither.isRight
       )
-//      assert(
-//        Try(downloadFile(publishBucket, testKey + "publish.json")).toEither.isLeft
-//      )
-//      assert(
-//        Try(downloadFile(publishBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
-//      )
+      //      assert(
+      //        Try(downloadFile(publishBucket, testKey + "publish.json")).toEither.isLeft
+      //      )
+      //      assert(
+      //        Try(downloadFile(publishBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
+      //      )
 
       // should write a temp results file to publish bucket
       val tempResults = decode[Publish.TempPublishResults](
-        downloadFile(publishBucket, testKey + "outputs.json")
+        downloadFile(publishBucket, publishContainer.s3Key + "outputs.json")
       ).value
-      tempResults.readmeKey shouldBe testKey + Publish.README_FILENAME
-      tempResults.bannerKey shouldBe testKey + Publish.BANNER_FILENAME
-      tempResults.changelogKey shouldBe testKey + Publish.CHANGELOG_FILENAME
+      tempResults.readmeKey shouldBe publishContainer.s3Key + Publish.README_FILENAME
+      tempResults.bannerKey shouldBe publishContainer.s3Key + Publish.BANNER_FILENAME
+      tempResults.changelogKey shouldBe publishContainer.s3Key + Publish.CHANGELOG_FILENAME
       tempResults.totalSize > 0 shouldBe true
 
       // should export package and metadata files to publish bucket
-      downloadFile(publishBucket, testKey + "files/pkg1.txt") shouldBe "data data"
-      downloadFile(publishBucket, testKey + "files/pkg2/file2.dcm") shouldBe "atad atad"
-      downloadFile(publishBucket, testKey + "files/pkg2/file3.dcm") shouldBe "double data"
+      downloadFile(publishBucket, publishContainer.s3Key + "files/pkg1.txt") shouldBe "data data"
+      downloadFile(
+        publishBucket,
+        publishContainer.s3Key + "files/pkg2/file2.dcm"
+      ) shouldBe "atad atad"
+      downloadFile(
+        publishBucket,
+        publishContainer.s3Key + "files/pkg2/file3.dcm"
+      ) shouldBe "double data"
 
       val metadataSchemaJson =
         downloadFile(
           publishBucket,
-          testKey + "metadata/models/patient/versions/1/schema.json"
+          publishContainer.s3Key + "metadata/models/patient/versions/1/schema.json"
         )
 
       val bannerJpg =
-        downloadFile(publishBucket, testKey + s"/${Publish.BANNER_FILENAME}")
+        downloadFile(
+          publishBucket,
+          publishContainer.s3Key + s"/${Publish.BANNER_FILENAME}"
+        )
       bannerJpg shouldBe "banner-data"
       val readmeMarkdown =
-        downloadFile(publishBucket, testKey + s"/${Publish.README_FILENAME}")
+        downloadFile(
+          publishBucket,
+          publishContainer.s3Key + s"/${Publish.README_FILENAME}"
+        )
       readmeMarkdown shouldBe "readme-data"
       val changelogMarkdown =
-        downloadFile(publishBucket, testKey + s"/${Publish.CHANGELOG_FILENAME}")
+        downloadFile(
+          publishBucket,
+          publishContainer.s3Key + s"/${Publish.CHANGELOG_FILENAME}"
+        )
       changelogMarkdown shouldBe "changelog-data"
 
       // should write assets to public discover bucket
       downloadFile(
         assetBucket,
-        "dataset-assets/" + testKey + Publish.BANNER_FILENAME
+        "dataset-assets/" + publishContainer.s3Key + Publish.BANNER_FILENAME
       ) shouldBe "banner-data"
       downloadFile(
         assetBucket,
-        "dataset-assets/" + testKey + Publish.README_FILENAME
+        "dataset-assets/" + publishContainer.s3Key + Publish.README_FILENAME
       ) shouldBe "readme-data"
 
       val metadata =
-        downloadFile(publishBucket, testKey + Publish.MANIFEST_FILENAME)
+        downloadFile(
+          publishBucket,
+          publishContainer.s3Key + Publish.MANIFEST_FILENAME
+        )
 
       decode[DatasetMetadata](metadata) shouldBe Right(
         DatasetMetadataV5_0(
@@ -888,19 +942,19 @@ class TestPublish
 
     "create metadata, package objects and public assets in S3 (embargo bucket)" in {
       // everything under `testKey` should be gone:
-      assert(!s3FilesExistUnderKey(publishBucket, testKey))
-      assert(!s3FilesExistUnderKey(embargoBucket, testKey))
+      assert(!s3FilesExistUnderKey(publishBucket, publishContainer.s3Key))
+      assert(!s3FilesExistUnderKey(embargoBucket, publishContainer.s3Key))
 
       // seed the embargo bucket:
       createS3File(
         s3,
         embargoBucket,
-        s"${testKey}/delete-prefix-key/delete-file.txt"
+        s"${publishContainer.s3Key}/delete-prefix-key/delete-file.txt"
       )
       createS3File(
         s3,
         embargoBucket,
-        s"${testKey}/some-other-prefix/sub-key/another-file.txt"
+        s"${publishContainer.s3Key}/some-other-prefix/sub-key/another-file.txt"
       )
 
       val pkg1 = createPackage(testUser, name = "pkg1")
@@ -931,67 +985,90 @@ class TestPublish
 
       Publish.publishAssets(embargoContainer).await.isRight shouldBe true
       val assetsJson = Try(
-        downloadFile(embargoBucket, testKey + Publish.PUBLISH_ASSETS_FILENAME)
+        downloadFile(
+          embargoBucket,
+          publishContainer.s3Key + Publish.PUBLISH_ASSETS_FILENAME
+        )
       ).toEither
       assert(assetsJson.isRight)
 
-      runMetadataPublish(embargoBucket, testKey)
+      runMetadataPublish(embargoBucket, publishContainer.s3Key)
 
       // Finalizing the jobs should write an `output.json` and delete all other
       // temporary files
       Publish.finalizeDataset(embargoContainer).await shouldBe Right(())
       assert(
-        Try(downloadFile(embargoBucket, testKey + "outputs.json")).toEither.isRight
+        Try(
+          downloadFile(embargoBucket, publishContainer.s3Key + "outputs.json")
+        ).toEither.isRight
       )
-//      assert(
-//        Try(downloadFile(embargoBucket, testKey + "publish.json")).toEither.isLeft
-//      )
-//      assert(
-//        Try(downloadFile(embargoBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
-//      )
+      //      assert(
+      //        Try(downloadFile(embargoBucket, testKey + "publish.json")).toEither.isLeft
+      //      )
+      //      assert(
+      //        Try(downloadFile(embargoBucket, testKey + "metadata_intermediate_manifest.json")).toEither.isLeft
+      //      )
 
       // should write a temp results file to publish bucket
       val tempResults = decode[Publish.TempPublishResults](
-        downloadFile(embargoBucket, testKey + "outputs.json")
+        downloadFile(embargoBucket, publishContainer.s3Key + "outputs.json")
       ).value
-      tempResults.readmeKey shouldBe testKey + Publish.README_FILENAME
-      tempResults.bannerKey shouldBe testKey + Publish.BANNER_FILENAME
-      tempResults.changelogKey shouldBe testKey + Publish.CHANGELOG_FILENAME
+      tempResults.readmeKey shouldBe publishContainer.s3Key + Publish.README_FILENAME
+      tempResults.bannerKey shouldBe publishContainer.s3Key + Publish.BANNER_FILENAME
+      tempResults.changelogKey shouldBe publishContainer.s3Key + Publish.CHANGELOG_FILENAME
       tempResults.totalSize > 0 shouldBe true
 
       // should export package and metadata files to publish bucket
-      downloadFile(embargoBucket, testKey + "files/pkg1.txt") shouldBe "data data"
-      downloadFile(embargoBucket, testKey + "files/pkg2/file2.dcm") shouldBe "atad atad"
-      downloadFile(embargoBucket, testKey + "files/pkg2/file3.dcm") shouldBe "double data"
+      downloadFile(embargoBucket, publishContainer.s3Key + "files/pkg1.txt") shouldBe "data data"
+      downloadFile(
+        embargoBucket,
+        publishContainer.s3Key + "files/pkg2/file2.dcm"
+      ) shouldBe "atad atad"
+      downloadFile(
+        embargoBucket,
+        publishContainer.s3Key + "files/pkg2/file3.dcm"
+      ) shouldBe "double data"
 
       val metadataSchemaJson =
         downloadFile(
           embargoBucket,
-          testKey + "metadata/models/patient/versions/1/schema.json"
+          publishContainer.s3Key + "metadata/models/patient/versions/1/schema.json"
         )
 
       val bannerJpg =
-        downloadFile(embargoBucket, testKey + s"/${Publish.BANNER_FILENAME}")
+        downloadFile(
+          embargoBucket,
+          publishContainer.s3Key + s"/${Publish.BANNER_FILENAME}"
+        )
       bannerJpg shouldBe "banner-data"
       val readmeMarkdown =
-        downloadFile(embargoBucket, testKey + s"/${Publish.README_FILENAME}")
+        downloadFile(
+          embargoBucket,
+          publishContainer.s3Key + s"/${Publish.README_FILENAME}"
+        )
       readmeMarkdown shouldBe "readme-data"
       val changelogMarkdown =
-        downloadFile(embargoBucket, testKey + s"/${Publish.CHANGELOG_FILENAME}")
+        downloadFile(
+          embargoBucket,
+          publishContainer.s3Key + s"/${Publish.CHANGELOG_FILENAME}"
+        )
       changelogMarkdown shouldBe "changelog-data"
 
       // should write assets to public discover bucket
       downloadFile(
         assetBucket,
-        "dataset-assets/" + testKey + Publish.BANNER_FILENAME
+        "dataset-assets/" + publishContainer.s3Key + Publish.BANNER_FILENAME
       ) shouldBe "banner-data"
       downloadFile(
         assetBucket,
-        "dataset-assets/" + testKey + Publish.README_FILENAME
+        "dataset-assets/" + publishContainer.s3Key + Publish.README_FILENAME
       ) shouldBe "readme-data"
 
       val metadata =
-        downloadFile(embargoBucket, testKey + Publish.MANIFEST_FILENAME)
+        downloadFile(
+          embargoBucket,
+          publishContainer.s3Key + Publish.MANIFEST_FILENAME
+        )
 
       decode[DatasetMetadata](metadata) shouldBe Right(
         DatasetMetadataV5_0(
@@ -1135,22 +1212,33 @@ class TestPublish
       )
 
       Publish.publishAssets(publishContainer).await.isRight shouldBe true
-      runMetadataPublish(publishBucket, testKey)
+      runMetadataPublish(publishBucket, publishContainer.s3Key)
 
       // Finalizing the jobs should write an `output.json` and delete all other
       // temporary files
       Publish.finalizeDataset(publishContainer).await shouldBe Right(())
 
       // should export package and metadata files to publish bucket
-      downloadFile(publishBucket, testKey + "files/pkg1.txt") shouldBe "data data"
-      downloadFile(publishBucket, testKey + "files/pkg2/file2.dcm") shouldBe "atad atad"
+      downloadFile(publishBucket, publishContainer.s3Key + "files/pkg1.txt") shouldBe "data data"
+      downloadFile(
+        publishBucket,
+        publishContainer.s3Key + "files/pkg2/file2.dcm"
+      ) shouldBe "atad atad"
       // should ignore graph file (file3.dcm)
       assert(
-        Try(downloadFile(publishBucket, testKey + "files/pkg2/file3.dcm")).toEither.isLeft
+        Try(
+          downloadFile(
+            publishBucket,
+            publishContainer.s3Key + "files/pkg2/file3.dcm"
+          )
+        ).toEither.isLeft
       )
 
       val metadata =
-        downloadFile(publishBucket, testKey + Publish.MANIFEST_FILENAME)
+        downloadFile(
+          publishBucket,
+          publishContainer.s3Key + Publish.MANIFEST_FILENAME
+        )
 
       decode[DatasetMetadata](metadata).map(_.files.map(_.path)) shouldBe Right(
         List(
@@ -1279,31 +1367,31 @@ class TestPublish
 
   "publish source" should {
     // this test is no longer valid
-//    "stream packages in BFS order" in {
-//      val pkg1 = createPackage(testUser, name = "p1")
-//      val pkg2 = createPackage(testUser, name = "p2")
-//      val child1 = createPackage(testUser, parent = Some(pkg1), name = "c1")
-//      val child2 = createPackage(testUser, parent = Some(pkg1), name = "c2")
-//      val grandchild1 =
-//        createPackage(testUser, parent = Some(child1), name = "g1")
-//      val grandchild2 =
-//        createPackage(testUser, parent = Some(child2), name = "g2")
-//
-//      val (_, sink) = PackagesSource()
-//        .toMat(TestSink.probe)(Keep.both)
-//        .run()
-//
-//      sink.request(n = 100)
-//      sink.expectNextUnordered(
-//        (pkg1, Nil),
-//        (pkg2, Nil),
-//        (child1, Seq("p1")),
-//        (child2, Seq("p1")),
-//        (grandchild1, Seq("p1", "c1")),
-//        (grandchild2, Seq("p1", "c2"))
-//      )
-//      sink.expectComplete()
-//    }
+    //    "stream packages in BFS order" in {
+    //      val pkg1 = createPackage(testUser, name = "p1")
+    //      val pkg2 = createPackage(testUser, name = "p2")
+    //      val child1 = createPackage(testUser, parent = Some(pkg1), name = "c1")
+    //      val child2 = createPackage(testUser, parent = Some(pkg1), name = "c2")
+    //      val grandchild1 =
+    //        createPackage(testUser, parent = Some(child1), name = "g1")
+    //      val grandchild2 =
+    //        createPackage(testUser, parent = Some(child2), name = "g2")
+    //
+    //      val (_, sink) = PackagesSource()
+    //        .toMat(TestSink.probe)(Keep.both)
+    //        .run()
+    //
+    //      sink.request(n = 100)
+    //      sink.expectNextUnordered(
+    //        (pkg1, Nil),
+    //        (pkg2, Nil),
+    //        (child1, Seq("p1")),
+    //        (child2, Seq("p1")),
+    //        (grandchild1, Seq("p1", "c1")),
+    //        (grandchild2, Seq("p1", "c2"))
+    //      )
+    //      sink.expectComplete()
+    //    }
 
     // TODO: write a test to check that PackagesSource() emits packages
 
@@ -1335,7 +1423,7 @@ class TestPublish
           pkg,
           file1,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/p1/c1/pkg/file1.txt",
           s"files/p1/c1/pkg"
         ),
@@ -1343,7 +1431,7 @@ class TestPublish
           pkg,
           file2,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/p1/c1/pkg/file2.txt",
           s"files/p1/c1/pkg"
         )
@@ -1444,7 +1532,7 @@ class TestPublish
           pkg,
           file1,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/p1/c1/pkg/file1.txt",
           s"files/p1/c1/pkg"
         ),
@@ -1452,7 +1540,7 @@ class TestPublish
           pkg,
           file2,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/p1/c1/pkg/file2.txt",
           s"files/p1/c1/pkg"
         )
@@ -1473,7 +1561,7 @@ class TestPublish
           pkg,
           file,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/grandparent/parent/My_Notes.txt",
           s"files/grandparent/parent/My_Notes.txt"
         )
@@ -1491,7 +1579,7 @@ class TestPublish
           pkg,
           file,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/grandparent/parent/My_Notes.text",
           s"files/grandparent/parent/My_Notes.text"
         )
@@ -1519,7 +1607,7 @@ class TestPublish
           pkg,
           file1,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/grandparent/parent/Brain_stuff/brain_01.dcm",
           s"files/grandparent/parent/Brain_stuff"
         ),
@@ -1527,7 +1615,7 @@ class TestPublish
           pkg,
           file2,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/grandparent/parent/Brain_stuff/brain_02.dcm",
           s"files/grandparent/parent/Brain_stuff"
         )
@@ -1568,8 +1656,8 @@ class TestPublish
             file,
             publishBucket,
             "base",
-            testKey + "test.txt",
-            testKey + "test.txt"
+            publishContainer.s3Key + "test.txt",
+            publishContainer.s3Key + "test.txt"
           )
         )
         .via(CopyS3ObjectsFlow())
@@ -1578,7 +1666,7 @@ class TestPublish
         .await
 
       downloadFile(file.s3Bucket, file.s3Key) shouldBe "some content"
-      downloadFile(publishBucket, s"base/$testKey/test.txt") shouldBe "some content"
+      downloadFile(publishBucket, s"base/$publishContainer.s3Key/test.txt") shouldBe "some content"
     }
   }
 
@@ -1586,9 +1674,9 @@ class TestPublish
     "compute total storage under the publish dataset key" in {
       Publish.computeTotalSize(publishContainer).await.value shouldBe 0
 
-      createS3File(s3, publishBucket, testKey + "a", "a")
-      createS3File(s3, publishBucket, testKey + "b", "bb")
-      createS3File(s3, publishBucket, testKey + "c/c", "ccc")
+      createS3File(s3, publishBucket, publishContainer.s3Key + "a", "a")
+      createS3File(s3, publishBucket, publishContainer.s3Key + "b", "bb")
+      createS3File(s3, publishBucket, publishContainer.s3Key + "c/c", "ccc")
 
       Publish.computeTotalSize(publishContainer).await.value shouldBe 6
 
@@ -1616,7 +1704,7 @@ class TestPublish
           pkg,
           file1,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/p1/c1/pkg/file1.txt",
           s"files/p1/c1/pkg",
           None
@@ -1625,7 +1713,7 @@ class TestPublish
           pkg,
           file2,
           publishBucket,
-          testKey,
+          publishContainer.s3Key,
           s"files/p1/c1/pkg/file2.txt",
           s"files/p1/c1/pkg",
           None
@@ -1634,14 +1722,14 @@ class TestPublish
       sink.expectComplete()
     }
 
-//    "emit KeepFile when a published file is unchanged" in {
-//    }
+    //    "emit KeepFile when a published file is unchanged" in {
+    //    }
 
-//    "emit DeleteFile and CopyFile when a file is moved" in {
-//    }
+    //    "emit DeleteFile and CopyFile when a file is moved" in {
+    //    }
 
-//    "emit DeleteFile when a published file is to be removed" in {
-//    }
+    //    "emit DeleteFile when a published file is to be removed" in {
+    //    }
 
   }
 
@@ -2027,11 +2115,11 @@ class TestPublish
 
   } // END: "compute file actions " should...
 
-//  "get dataset metadata" should {
-//    "load manifest.json into DatasetMetadata" in {
-//
-//    }
-//  }
+  //  "get dataset metadata" should {
+  //    "load manifest.json into DatasetMetadata" in {
+  //
+  //    }
+  //  }
 
   "decode Manifest in Publishing 5.0 into DatasetMetadata" should {
     "load manifest.json into a DatasetMetadata 4.0 when there are no S3 Version Ids" in {
@@ -2297,146 +2385,146 @@ class TestPublish
       decode[DatasetMetadata](sampleMetadataV4) shouldBe Right(mdV4)
     }
 
-//    "load an actual manifest.json into a DatasetMetadata 4.0" in {
-//      val sampleMetadataV4 =
-//        """{
-//          |  "pennsieveDatasetId" : 5068,
-//          |  "version" : 1,
-//          |  "name" : "publishing-5x-8",
-//          |  "description" : "test dataset 8",
-//          |  "creator" : {
-//          |    "first_name" : "Michael",
-//          |    "last_name" : "Uftring",
-//          |    "orcid" : "0000-0001-7054-4685"
-//          |  },
-//          |  "contributors" : [
-//          |    {
-//          |      "first_name" : "Michael",
-//          |      "last_name" : "Uftring",
-//          |      "orcid" : "0000-0001-7054-4685"
-//          |    }
-//          |  ],
-//          |  "sourceOrganization" : "Publishing 5.0 Workspace",
-//          |  "keywords" : [
-//          |    "publishing",
-//          |    "5.0"
-//          |  ],
-//          |  "datePublished" : "2023-09-11",
-//          |  "license" : "Community Data License Agreement – Permissive",
-//          |  "@id" : "https://doi.org/10.21397/hsvc-wubl",
-//          |  "publisher" : "The University of Pennsylvania",
-//          |  "@context" : "http://schema.org/",
-//          |  "@type" : "Dataset",
-//          |  "schemaVersion" : "http://schema.org/version/3.7/",
-//          |  "collections" : [
-//          |  ],
-//          |  "relatedPublications" : [
-//          |  ],
-//          |  "files" : [
-//          |    {
-//          |      "name" : "banner.jpg",
-//          |      "path" : "banner.jpg",
-//          |      "size" : 5008,
-//          |      "fileType" : "JPEG",
-//          |      "s3VersionId" : "9u.qGGC5BgkxZhTv4VlvhnSHR8_yK.zs"
-//          |    },
-//          |    {
-//          |      "name" : "changelog.md",
-//          |      "path" : "changelog.md",
-//          |      "size" : 24,
-//          |      "fileType" : "Markdown",
-//          |      "s3VersionId" : "llW9Nah2l2JyqylZ6mQW_GwsFjAM1TeT"
-//          |    },
-//          |    {
-//          |      "name" : "file.csv",
-//          |      "path" : "metadata/records/file.csv",
-//          |      "size" : 355,
-//          |      "fileType" : "CSV",
-//          |      "s3VersionId" : "4TLWZysTwpqi5JQkZw4VRMnJlMO7umQh"
-//          |    },
-//          |    {
-//          |      "name" : "manifest.json",
-//          |      "path" : "manifest.json",
-//          |      "size" : 2741,
-//          |      "fileType" : "Json"
-//          |    },
-//          |    {
-//          |      "name" : "readme.md",
-//          |      "path" : "readme.md",
-//          |      "size" : 25,
-//          |      "fileType" : "Markdown",
-//          |      "s3VersionId" : "x16k1IhceSfRU5KcUUmzEMhZG533sI0I"
-//          |    },
-//          |    {
-//          |    {
-//          |      "name" : "test-001.dat",
-//          |      "path" : "files/first/test-001.dat",
-//          |      "size" : 4100,
-//          |      "fileType" : "Persyst",
-//          |      "sourcePackageId" : "N:package:a6512ea3-918d-45cd-adef-a5ef8f30600e",
-//          |      "s3VersionId" : "L6jMEVVz7.jKms05YP.2DlV_7KjxzFf1"
-//          |    },
-//          |    {
-//          |      "name" : "test-002.dat",
-//          |      "path" : "files/first/test-002.dat",
-//          |      "size" : 4100,
-//          |      "fileType" : "Persyst",
-//          |      "sourcePackageId" : "N:package:929564cc-9260-41d8-857f-cc78f90eb8ca",
-//          |      "s3VersionId" : "vlutn_m4ZOECZKhpMhaeYtFceHCWHQD7"
-//          |    },
-//          |    {
-//          |      "name" : "test-003.dat",
-//          |      "path" : "files/first/test-003.dat",
-//          |      "size" : 4100,
-//          |      "fileType" : "Persyst",
-//          |      "sourcePackageId" : "N:package:9bf150bc-c700-4094-a3d0-1e43d22f971d",
-//          |      "s3VersionId" : "IFmDw_6sNP_b9Rx0LTjvx4EasTvYjcY6"
-//          |    }
-//          |  ],
-//          |  "pennsieveSchemaVersion" : "4.0"
-//          |}""".stripMargin
-//
-//      val mdV4 = DatasetMetadataV4_0(
-//        pennsieveDatasetId = 1,
-//        version = 1,
-//        revision = Some(1),
-//        name = "Test Dataset",
-//        description = "Lorem ipsum",
-//        creator =
-//          PublishedContributor("Blaise", "Pascal", Some("0000-0009-1234-5678")),
-//        contributors = List(
-//          PublishedContributor("Isaac", "Newton", None),
-//          PublishedContributor("Albert", "Einstein", None)
-//        ),
-//        sourceOrganization = "1",
-//        keywords = List("neuro", "neuron"),
-//        datePublished = LocalDate.of(2019, 6, 5),
-//        license = Some(License.MIT),
-//        `@id` = "10.21397/jlt1-xdqn",
-//        `@context` = "http://purl.org/dc/terms",
-//        files = List(
-//          FileManifest("manifest.json", "manifest.json", 1234, FileType.Json),
-//          FileManifest(
-//            "packages/brain.dcm",
-//            15010,
-//            FileType.DICOM,
-//            Some("N:package:1"),
-//            Some("s3-version-abc123")
-//          )
-//        ),
-//        collections = Some(List(PublishedCollection("My great collection"))),
-//        relatedPublications = Some(
-//          List(
-//            PublishedExternalPublication(
-//              Doi("10.26275/t6j6-77pu"),
-//              Some(RelationshipType.IsDescribedBy)
-//            )
-//          )
-//        )
-//      )
-//
-//      decode[DatasetMetadata](sampleMetadataV4) shouldBe Right(mdV4)
-//    }
+    //    "load an actual manifest.json into a DatasetMetadata 4.0" in {
+    //      val sampleMetadataV4 =
+    //        """{
+    //          |  "pennsieveDatasetId" : 5068,
+    //          |  "version" : 1,
+    //          |  "name" : "publishing-5x-8",
+    //          |  "description" : "test dataset 8",
+    //          |  "creator" : {
+    //          |    "first_name" : "Michael",
+    //          |    "last_name" : "Uftring",
+    //          |    "orcid" : "0000-0001-7054-4685"
+    //          |  },
+    //          |  "contributors" : [
+    //          |    {
+    //          |      "first_name" : "Michael",
+    //          |      "last_name" : "Uftring",
+    //          |      "orcid" : "0000-0001-7054-4685"
+    //          |    }
+    //          |  ],
+    //          |  "sourceOrganization" : "Publishing 5.0 Workspace",
+    //          |  "keywords" : [
+    //          |    "publishing",
+    //          |    "5.0"
+    //          |  ],
+    //          |  "datePublished" : "2023-09-11",
+    //          |  "license" : "Community Data License Agreement – Permissive",
+    //          |  "@id" : "https://doi.org/10.21397/hsvc-wubl",
+    //          |  "publisher" : "The University of Pennsylvania",
+    //          |  "@context" : "http://schema.org/",
+    //          |  "@type" : "Dataset",
+    //          |  "schemaVersion" : "http://schema.org/version/3.7/",
+    //          |  "collections" : [
+    //          |  ],
+    //          |  "relatedPublications" : [
+    //          |  ],
+    //          |  "files" : [
+    //          |    {
+    //          |      "name" : "banner.jpg",
+    //          |      "path" : "banner.jpg",
+    //          |      "size" : 5008,
+    //          |      "fileType" : "JPEG",
+    //          |      "s3VersionId" : "9u.qGGC5BgkxZhTv4VlvhnSHR8_yK.zs"
+    //          |    },
+    //          |    {
+    //          |      "name" : "changelog.md",
+    //          |      "path" : "changelog.md",
+    //          |      "size" : 24,
+    //          |      "fileType" : "Markdown",
+    //          |      "s3VersionId" : "llW9Nah2l2JyqylZ6mQW_GwsFjAM1TeT"
+    //          |    },
+    //          |    {
+    //          |      "name" : "file.csv",
+    //          |      "path" : "metadata/records/file.csv",
+    //          |      "size" : 355,
+    //          |      "fileType" : "CSV",
+    //          |      "s3VersionId" : "4TLWZysTwpqi5JQkZw4VRMnJlMO7umQh"
+    //          |    },
+    //          |    {
+    //          |      "name" : "manifest.json",
+    //          |      "path" : "manifest.json",
+    //          |      "size" : 2741,
+    //          |      "fileType" : "Json"
+    //          |    },
+    //          |    {
+    //          |      "name" : "readme.md",
+    //          |      "path" : "readme.md",
+    //          |      "size" : 25,
+    //          |      "fileType" : "Markdown",
+    //          |      "s3VersionId" : "x16k1IhceSfRU5KcUUmzEMhZG533sI0I"
+    //          |    },
+    //          |    {
+    //          |    {
+    //          |      "name" : "test-001.dat",
+    //          |      "path" : "files/first/test-001.dat",
+    //          |      "size" : 4100,
+    //          |      "fileType" : "Persyst",
+    //          |      "sourcePackageId" : "N:package:a6512ea3-918d-45cd-adef-a5ef8f30600e",
+    //          |      "s3VersionId" : "L6jMEVVz7.jKms05YP.2DlV_7KjxzFf1"
+    //          |    },
+    //          |    {
+    //          |      "name" : "test-002.dat",
+    //          |      "path" : "files/first/test-002.dat",
+    //          |      "size" : 4100,
+    //          |      "fileType" : "Persyst",
+    //          |      "sourcePackageId" : "N:package:929564cc-9260-41d8-857f-cc78f90eb8ca",
+    //          |      "s3VersionId" : "vlutn_m4ZOECZKhpMhaeYtFceHCWHQD7"
+    //          |    },
+    //          |    {
+    //          |      "name" : "test-003.dat",
+    //          |      "path" : "files/first/test-003.dat",
+    //          |      "size" : 4100,
+    //          |      "fileType" : "Persyst",
+    //          |      "sourcePackageId" : "N:package:9bf150bc-c700-4094-a3d0-1e43d22f971d",
+    //          |      "s3VersionId" : "IFmDw_6sNP_b9Rx0LTjvx4EasTvYjcY6"
+    //          |    }
+    //          |  ],
+    //          |  "pennsieveSchemaVersion" : "4.0"
+    //          |}""".stripMargin
+    //
+    //      val mdV4 = DatasetMetadataV4_0(
+    //        pennsieveDatasetId = 1,
+    //        version = 1,
+    //        revision = Some(1),
+    //        name = "Test Dataset",
+    //        description = "Lorem ipsum",
+    //        creator =
+    //          PublishedContributor("Blaise", "Pascal", Some("0000-0009-1234-5678")),
+    //        contributors = List(
+    //          PublishedContributor("Isaac", "Newton", None),
+    //          PublishedContributor("Albert", "Einstein", None)
+    //        ),
+    //        sourceOrganization = "1",
+    //        keywords = List("neuro", "neuron"),
+    //        datePublished = LocalDate.of(2019, 6, 5),
+    //        license = Some(License.MIT),
+    //        `@id` = "10.21397/jlt1-xdqn",
+    //        `@context` = "http://purl.org/dc/terms",
+    //        files = List(
+    //          FileManifest("manifest.json", "manifest.json", 1234, FileType.Json),
+    //          FileManifest(
+    //            "packages/brain.dcm",
+    //            15010,
+    //            FileType.DICOM,
+    //            Some("N:package:1"),
+    //            Some("s3-version-abc123")
+    //          )
+    //        ),
+    //        collections = Some(List(PublishedCollection("My great collection"))),
+    //        relatedPublications = Some(
+    //          List(
+    //            PublishedExternalPublication(
+    //              Doi("10.26275/t6j6-77pu"),
+    //              Some(RelationshipType.IsDescribedBy)
+    //            )
+    //          )
+    //        )
+    //      )
+    //
+    //      decode[DatasetMetadata](sampleMetadataV4) shouldBe Right(mdV4)
+    //    }
 
   }
 
@@ -2447,6 +2535,26 @@ class TestPublish
     listBucket(bucket)
       .map(o => s3.deleteObject(bucket, o.getKey).isRight shouldBe true)
     s3.deleteBucket(bucket).isRight shouldBe true
+
+    val waiter = s3Client.waiter()
+    try {
+      val waitResponse = waiter
+        .waitUntilBucketNotExists(
+          HeadBucketRequest.builder().bucket(bucket).build(),
+          WaiterOverrideConfiguration
+            .builder()
+            .waitTimeout(java.time.Duration.ofSeconds(30))
+            .build()
+        )
+        .matched()
+        .exception()
+      waitResponse.isPresent shouldBe true
+      waitResponse.get() shouldBe a[NoSuchBucketException]
+
+    } finally {
+      waiter.close()
+    }
+
   }
 
   def listBucket(bucket: String): mutable.Seq[S3ObjectSummary] =
@@ -2482,7 +2590,8 @@ class TestPublish
 
     val schemaJsonKey = s3Key + "metadata/models/patient/versions/1/schema.json"
 
-    val schemaJson = s"""
+    val schemaJson =
+      s"""
       {
         "$$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": "patient",
@@ -2630,6 +2739,34 @@ class TestPublish
       .listObjects(s3Bucket, usePrefix)
       .getObjectSummaries
       .size() > 0
+  }
+
+  def uploadManifest(
+    s3Bucket: String,
+    s3Key: String,
+    manifest: DatasetMetadataV5_0
+  )(implicit
+    encoder: Encoder[DatasetMetadataV5_0]
+  ): Unit = {
+    val manifestJSON = manifest.asJson.toString()
+    s3.putObject(s3Bucket, s3Key + Publish.MANIFEST_FILENAME, manifestJSON)
+      .leftMap(e => {
+        println(
+          s"Error uploading s3://$s3Bucket/${s3Key + Publish.MANIFEST_FILENAME}"
+        )
+        e
+      })
+      .isRight shouldBe true
+  }
+
+  def enableBucketVersioning(bucketName: String): Either[Throwable, Unit] = {
+    val enableVersioningRequest = new SetBucketVersioningConfigurationRequest(
+      publishBucket,
+      new BucketVersioningConfiguration(BucketVersioningConfiguration.ENABLED)
+    )
+    Either.catchNonFatal {
+      s3.client.setBucketVersioningConfiguration(enableVersioningRequest)
+    }
   }
 
 }
