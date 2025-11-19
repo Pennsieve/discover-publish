@@ -25,11 +25,18 @@ import com.pennsieve.test.{
   DockerContainer,
   PostgresContainerImpl,
   PostgresDockerContainerImpl,
-  PostgresSeedDockerContainerImpl,
   StackedDockerContainer
 }
 import org.testcontainers.containers.wait.strategy.HttpWaitStrategy
 import com.typesafe.config.{ Config, ConfigFactory, ConfigValueFactory }
+import software.amazon.awssdk.auth.credentials.{
+  AwsBasicCredentials,
+  StaticCredentialsProvider
+}
+import software.amazon.awssdk.regions.Region
+import software.amazon.awssdk.services.s3.{ S3Client, S3Configuration }
+
+import java.net.URI
 
 /**
   * Shared singleton Docker containers.
@@ -41,26 +48,30 @@ object DiscoverPublishDockerContainers {
   val postgresContainer: PostgresContainerImpl =
     new PostgresDockerContainerImpl
 
-  val s3Container: S3DockerContainerImpl = new S3DockerContainerImpl
+  val s3Container: S3DockerContainerImpl =
+    new S3DockerContainerImpl
 
 }
 
 object S3DockerContainer {
-  val port: Int = 9000
+  val port: Int = 4566
   val accessKey: String = "access-key"
   val secretKey: String = "secret-key"
 }
 
 final class S3DockerContainerImpl
     extends DockerContainer(
-      dockerImage = s"minio/minio:RELEASE.2025-09-07T16-13-09Z",
+      dockerImage = s"localstack/localstack:stable",
       exposedPorts = Seq(S3DockerContainer.port),
       env = Map(
-        "MINIO_ACCESS_KEY" -> S3DockerContainer.accessKey,
-        "MINIO_SECRET_KEY" -> S3DockerContainer.secretKey
+        "SERVICES" -> "s3",
+        "AWS_DEFAULT_REGION" -> "us-east-1",
+        "AWS_ACCESS_KEY_ID" -> S3DockerContainer.accessKey,
+        "AWS_SECRET_ACCESS_KEY" -> S3DockerContainer.secretKey,
+        "PERSISTENCE" -> "0",
+        "DEBUG" -> "0" // change to "1" for more logging in Docker container
       ),
-      waitStrategy = Some(new HttpWaitStrategy().forPath("/minio/health/live")),
-      command = Seq("server", "/tmp")
+      waitStrategy = Some(new HttpWaitStrategy().forPath("/_localstack/health"))
     ) {
 
   def mappedPort(): Int = super.mappedPort(S3DockerContainer.port)
@@ -118,6 +129,25 @@ final class S3DockerContainerImpl
       .withClientConfiguration(clientConfig)
       .build()
   }
+
+  def s3ClientV2: S3Client =
+    S3Client
+      .builder()
+      .endpointOverride(URI.create(endpointUrl))
+      .region(Region.US_EAST_1)
+      .credentialsProvider(
+        StaticCredentialsProvider.create(
+          AwsBasicCredentials
+            .create(accessKey, secretKey)
+        )
+      )
+      .serviceConfiguration(
+        S3Configuration
+          .builder()
+          .pathStyleAccessEnabled(true) // seems necessary for localstack
+          .build()
+      )
+      .build()
 }
 
 trait DiscoverPublishS3DockerContainer extends StackedDockerContainer {

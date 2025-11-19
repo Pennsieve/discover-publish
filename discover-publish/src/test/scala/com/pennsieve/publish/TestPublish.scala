@@ -18,52 +18,57 @@ package com.pennsieve.publish
 
 import akka.stream.scaladsl.Keep
 import akka.stream.testkit.scaladsl.TestSink
-import akka.actor.ActorSystem
-import akka.stream.scaladsl.{Sink, Source}
+import akka.actor.{ scala2ActorRef, ActorSystem }
+import akka.stream.scaladsl.{ Sink, Source }
 import cats.data.EitherT
 import cats.implicits._
 import com.amazonaws.services.s3.model.{
   Bucket,
   BucketVersioningConfiguration,
   S3ObjectSummary,
+  S3VersionSummary,
   SetBucketVersioningConfigurationRequest
 }
 import com.pennsieve.audit.middleware.TraceId
-import com.pennsieve.clients.{DatasetAssetClient, S3DatasetAssetClient}
+import com.pennsieve.clients.{ DatasetAssetClient, S3DatasetAssetClient }
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.core.utilities._
-import com.pennsieve.domain.{CoreError, ServiceError}
+import com.pennsieve.domain.{ CoreError, ServiceError }
 import com.pennsieve.managers.StorageManager
 import com.pennsieve.models._
-import com.pennsieve.publish.models.{CopyAction, DeleteAction, KeepAction}
+import com.pennsieve.publish.models.{ CopyAction, DeleteAction, KeepAction }
 import com.pennsieve.test._
 import com.pennsieve.test.helpers._
 import org.scalatest.EitherValues._
 import com.pennsieve.traits.PostgresProfile.api._
 import com.pennsieve.utilities.Container
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.{ Config, ConfigFactory }
 import io.circe.Encoder
 import io.circe.parser.decode
 import io.circe.syntax._
 
 import java.time.LocalDate
 import org.apache.commons.io.IOUtils
-import org.scalatest.{Assertion, BeforeAndAfterAll, BeforeAndAfterEach, Suite}
+import org.scalatest.{ Assertion, BeforeAndAfterAll, BeforeAndAfterEach, Suite }
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
-import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.{
+  GetObjectRequest,
+  GetObjectResponse,
+  PutObjectResponse
+}
 
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ ExecutionContext, Future }
 import scala.util.Try
 import java.io.InputStream
+import java.nio.charset.StandardCharsets
 import java.util.UUID
 
 case class InsecureDatabaseContainer(config: Config, organization: Organization)
-  extends Container
+    extends Container
     with DatabaseContainer
     with UserManagerContainer
     with OrganizationContainer
@@ -74,7 +79,7 @@ case class InsecureDatabaseContainer(config: Config, organization: Organization)
 }
 
 class TestPublish
-  extends AnyWordSpec
+    extends AnyWordSpec
     with Matchers
     with PersistantTestContainers
     with DiscoverPublishS3DockerContainer
@@ -113,21 +118,21 @@ class TestPublish
   var datasetAssetClient: DatasetAssetClient = _
 
   /**
-   * Run prior to publishAssets to clean `${container.s3Bucket}/${container.s3Key}` of existing objects before
-   * starting the publishing process. This is used to simulate discover-s3clean behavior prior to the discover-publish
-   * step function workflow being invoked.
-   *
-   * @param container
-   * @param executionContext
-   * @param system
-   * @return
-   */
+    * Run prior to publishAssets to clean `${container.s3Bucket}/${container.s3Key}` of existing objects before
+    * starting the publishing process. This is used to simulate discover-s3clean behavior prior to the discover-publish
+    * step function workflow being invoked.
+    *
+    * @param container
+    * @param executionContext
+    * @param system
+    * @return
+    */
   def s3PrePublishCleanObjects(
-                                container: PublishContainer
-                              )(implicit
-                                executionContext: ExecutionContext,
-                                system: ActorSystem
-                              ): EitherT[Future, CoreError, Unit] = {
+    container: PublishContainer
+  )(implicit
+    executionContext: ExecutionContext,
+    system: ActorSystem
+  ): EitherT[Future, CoreError, Unit] = {
     container.s3
       .deleteObjectsByPrefix(container.s3Bucket, container.s3Key)
       .toEitherT[Future]
@@ -160,14 +165,7 @@ class TestPublish
     )
 
     s3 = new S3(s3Container.s3Client)
-    s3Client = {
-      val region = Region.US_EAST_1
-      val sharedHttpClient = UrlConnectionHttpClient.builder().build()
-      S3Client.builder
-        .region(region)
-        .httpClient(sharedHttpClient)
-        .build
-    }
+    s3Client = s3Container.s3ClientV2
   }
 
   override def beforeEach(): Unit = {
@@ -664,11 +662,7 @@ class TestPublish
     }
 
     "succeed with an empty dataset" in {
-      uploadManifest(
-        publishContainer.s3Bucket,
-        publishContainer.s3Key,
-        newManifest(version = publishContainer.version - 1)
-      )
+      setupManifestIfRequired(publishContainer)
       val publishAssetsResult = Publish.publishAssets(publishContainer).await
       publishAssetsResult.isRight shouldBe true
       assert(
@@ -692,7 +686,9 @@ class TestPublish
     }
 
     "succeed when metadata service writes a manifest file with an empty file list" in {
-      Publish.publishAssets(publishContainer).await.isRight shouldBe true
+      setupManifestIfRequired(publishContainer)
+      val publishAssetsResult = Publish.publishAssets(publishContainer).await
+      publishAssetsResult.isRight shouldBe true
       assert(
         Try(
           downloadFile(
@@ -708,6 +704,7 @@ class TestPublish
     }
 
     "succeed when metadata service does not write an intermediate file" in {
+      setupManifestIfRequired(publishContainer)
       Publish.publishAssets(publishContainer).await.isRight shouldBe true
       assert(
         Try(
@@ -730,20 +727,24 @@ class TestPublish
       assert(!s3FilesExistUnderKey(embargoBucket, publishContainer.s3Key))
 
       // seed the publish bucket:
-      createS3File(
-        s3,
-        publishBucket,
-        s"${publishContainer.s3Key}/delete-prefix-key/delete-file.txt"
+      val existingFile1 = uploadPublishedPackage(
+        publishContainer,
+        "delete-file.txt",
+        "delete-prefix-key/delete-file.txt"
       )
-      createS3File(
-        s3,
-        publishBucket,
-        s"${publishContainer.s3Key}/some-other-prefix/sub-key/another-file.txt"
+      val existingFile2 = uploadPublishedPackage(
+        publishContainer,
+        "another-file.txt",
+        "some-other-prefix/sub-key/another-file.txt"
       )
+      val existingManifest = newManifest(
+        version = publishContainer.version - 1,
+        files = List(existingFile1, existingFile2)
+      )
+      setupManifestIfRequired(publishContainer, Some(existingManifest))
 
-      // Package with a single file
       val pkg1 = createPackage(testUser, name = "pkg1")
-      val file1 = createFile(
+      val (_, putResponse1) = createFileV2(
         pkg1,
         name = "file1",
         s3Key = "key/file.txt",
@@ -753,7 +754,7 @@ class TestPublish
 
       // Package with multiple file sources
       val pkg2 = createPackage(testUser, name = "pkg2")
-      val file2 = createFile(
+      val (_, putResponse2) = createFileV2(
         pkg2,
         name = "file2",
         s3Key = "key/file2.dcm",
@@ -761,7 +762,7 @@ class TestPublish
         size = 2222,
         fileType = FileType.DICOM
       )
-      val file3 = createFile(
+      val (_, putResponse3) = createFileV2(
         pkg2,
         name = "file3",
         s3Key = "key/file3.dcm",
@@ -770,7 +771,8 @@ class TestPublish
         fileType = FileType.DICOM
       )
 
-      Publish.publishAssets(publishContainer).await.isRight shouldBe true
+      val publishAssetsResult = Publish.publishAssets(publishContainer).await
+      publishAssetsResult.isRight shouldBe true
       val assetsJson = Try(
         downloadFile(
           publishBucket,
@@ -800,9 +802,21 @@ class TestPublish
       val tempResults = decode[Publish.TempPublishResults](
         downloadFile(publishBucket, publishContainer.s3Key + "outputs.json")
       ).value
-      tempResults.readmeKey shouldBe publishContainer.s3Key + Publish.README_FILENAME
-      tempResults.bannerKey shouldBe publishContainer.s3Key + Publish.BANNER_FILENAME
-      tempResults.changelogKey shouldBe publishContainer.s3Key + Publish.CHANGELOG_FILENAME
+
+      // in outputs.json, the keys are relative to the asset bucket, not publish
+      val assetKeyPrefix = publicAssetKeyPrefix(publishContainer)
+      tempResults.readmeKey shouldBe utils.joinKeys(
+        assetKeyPrefix,
+        Publish.README_FILENAME
+      )
+      tempResults.bannerKey shouldBe utils.joinKeys(
+        assetKeyPrefix,
+        Publish.BANNER_FILENAME
+      )
+      tempResults.changelogKey shouldBe utils.joinKeys(
+        assetKeyPrefix,
+        Publish.CHANGELOG_FILENAME
+      )
       tempResults.totalSize > 0 shouldBe true
 
       // should export package and metadata files to publish bucket
@@ -816,39 +830,43 @@ class TestPublish
         publishContainer.s3Key + "files/pkg2/file3.dcm"
       ) shouldBe "double data"
 
-      val metadataSchemaJson =
-        downloadFile(
+      val (metadataSchemaJson, metadataSchemaObject) =
+        downloadContentAndObject(
           publishBucket,
           publishContainer.s3Key + "metadata/models/patient/versions/1/schema.json"
         )
 
-      val bannerJpg =
-        downloadFile(
+      val (bannerJpg, bannerObject) =
+        downloadContentAndObject(
           publishBucket,
-          publishContainer.s3Key + s"/${Publish.BANNER_FILENAME}"
+          publishContainer.s3Key + s"${Publish.BANNER_FILENAME}"
         )
       bannerJpg shouldBe "banner-data"
       val readmeMarkdown =
         downloadFile(
           publishBucket,
-          publishContainer.s3Key + s"/${Publish.README_FILENAME}"
+          publishContainer.s3Key + s"${Publish.README_FILENAME}"
         )
       readmeMarkdown shouldBe "readme-data"
-      val changelogMarkdown =
-        downloadFile(
+      val (changelogMarkdown, changelogObject) =
+        downloadContentAndObject(
           publishBucket,
-          publishContainer.s3Key + s"/${Publish.CHANGELOG_FILENAME}"
+          publishContainer.s3Key + s"${Publish.CHANGELOG_FILENAME}"
         )
       changelogMarkdown shouldBe "changelog-data"
 
       // should write assets to public discover bucket
       downloadFile(
         assetBucket,
-        "dataset-assets/" + publishContainer.s3Key + Publish.BANNER_FILENAME
+        utils.joinKeys(
+          Seq("dataset-assets/", assetKeyPrefix, Publish.BANNER_FILENAME)
+        )
       ) shouldBe "banner-data"
       downloadFile(
         assetBucket,
-        "dataset-assets/" + publishContainer.s3Key + Publish.README_FILENAME
+        utils.joinKeys(
+          Seq("dataset-assets/", assetKeyPrefix, Publish.README_FILENAME)
+        )
       ) shouldBe "readme-data"
 
       val metadata =
@@ -878,13 +896,15 @@ class TestPublish
               Publish.CHANGELOG_FILENAME,
               Publish.CHANGELOG_FILENAME,
               changelogMarkdown.length,
-              FileType.Markdown
+              FileType.Markdown,
+              s3VersionId = Option(changelogObject.versionId())
             ),
             FileManifest(
               Publish.BANNER_FILENAME,
               Publish.BANNER_FILENAME,
               bannerJpg.length,
-              FileType.JPEG
+              FileType.JPEG,
+              s3VersionId = Option(bannerObject.versionId())
             ),
             FileManifest(
               Publish.MANIFEST_FILENAME,
@@ -897,21 +917,27 @@ class TestPublish
               "files/pkg2/file2.dcm",
               2222,
               FileType.DICOM,
-              Some(pkg2.nodeId)
+              Some(pkg2.nodeId),
+              s3VersionId = Option(putResponse2.versionId()),
+              sha256 = Option(putResponse2.checksumSHA256())
             ),
             FileManifest(
               "file3",
               "files/pkg2/file3.dcm",
               3333,
               FileType.DICOM,
-              Some(pkg2.nodeId)
+              Some(pkg2.nodeId),
+              s3VersionId = Option(putResponse3.versionId()),
+              sha256 = Option(putResponse3.checksumSHA256())
             ),
             FileManifest(
               "file1",
               "files/pkg1.txt",
               1234,
               FileType.Text,
-              Some(pkg1.nodeId)
+              Some(pkg1.nodeId),
+              s3VersionId = Option(putResponse1.versionId()),
+              sha256 = Option(putResponse1.checksumSHA256())
             ),
             FileManifest(
               Publish.README_FILENAME,
@@ -923,7 +949,8 @@ class TestPublish
               "schema.json",
               "metadata/models/patient/versions/1/schema.json",
               metadataSchemaJson.length,
-              FileType.Json
+              FileType.Json,
+              s3VersionId = Option(metadataSchemaObject.versionId())
             )
           ).sorted,
           pennsieveSchemaVersion = "5.0",
@@ -2522,14 +2549,31 @@ class TestPublish
   }
 
   /**
-   * Delete all objects from bucket, and delete the bucket itself
-   */
+    * Delete all objects from bucket, and delete the bucket itself
+    */
   def deleteBucket(bucket: String): Assertion = {
-    //TODO delete all versions now that versioning is enabled.
+    val versioningConfig = s3.client.getBucketVersioningConfiguration(bucket)
+    if (versioningConfig.getStatus == BucketVersioningConfiguration.ENABLED) {
+      deleteVersionedBucket(bucket)
+    } else {
+      deleteUnversionedBucket(bucket)
+    }
+
+  }
+
+  def deleteUnversionedBucket(bucket: String): Assertion = {
     listBucket(bucket)
       .map(o => s3.deleteObject(bucket, o.getKey).isRight shouldBe true)
     s3.deleteBucket(bucket).isRight shouldBe true
 
+  }
+
+  def deleteVersionedBucket(bucket: String): Assertion = {
+    listVersionedBucket(bucket).map(
+      s =>
+        s3.client.deleteVersion(bucket, s.getKey, s.getVersionId) shouldBe (())
+    )
+    s3.deleteBucket(bucket).isRight shouldBe true
   }
 
   def listBucket(bucket: String): mutable.Seq[S3ObjectSummary] =
@@ -2538,9 +2582,12 @@ class TestPublish
       .getObjectSummaries
       .asScala
 
+  def listVersionedBucket(bucket: String): mutable.Seq[S3VersionSummary] =
+    s3.client.listVersions(bucket, "").getVersionSummaries.asScala
+
   /**
-   * Read file contents from S3 as a string.
-   */
+    * Read file contents from S3 as a string.
+    */
   def downloadFile(s3Bucket: String, s3Key: String): String = {
     val stream: InputStream = s3
       .getObject(s3Bucket, s3Key)
@@ -2558,9 +2605,26 @@ class TestPublish
     }
   }
 
+  def downloadContentAndObject(
+    s3Bucket: String,
+    s3Key: String
+  ): (String, GetObjectResponse) = {
+
+    val responseInputStream = s3Client.getObject(
+      GetObjectRequest.builder().bucket(s3Bucket).key(s3Key).build()
+    )
+    try {
+      val content =
+        scala.io.Source.fromInputStream(responseInputStream, "UTF-8").mkString
+      (content, responseInputStream.response())
+    } finally {
+      responseInputStream.close()
+    }
+  }
+
   /**
-   * Mock run `metadata-publish` publishing just one metadata model schema
-   */
+    * Mock run `metadata-publish` publishing just one metadata model schema
+    */
   def runMetadataPublish(s3Bucket: String, s3Key: String): Unit = {
 
     val schemaJsonKey = s3Key + "metadata/models/patient/versions/1/schema.json"
@@ -2598,8 +2662,7 @@ class TestPublish
       })
       .isRight shouldBe true
 
-    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME,
-        s"""{
+    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME, s"""{
       "manifests": [
         {
           "path": "metadata/models/patient/versions/1/schema.json",
@@ -2617,11 +2680,10 @@ class TestPublish
   }
 
   def runMetadataPublishEmptyManifestList(
-                                           s3Bucket: String,
-                                           s3Key: String
-                                         ): Unit = {
-    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME,
-        s"""{
+    s3Bucket: String,
+    s3Key: String
+  ): Unit = {
+    s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME, s"""{
       "manifests": []
       }""")
       .leftMap(e => {
@@ -2634,22 +2696,22 @@ class TestPublish
   }
 
   def setDatasetIgnoreFiles(
-                             ignoreFiles: Seq[DatasetIgnoreFile]
-                           ): Seq[DatasetIgnoreFile] =
+    ignoreFiles: Seq[DatasetIgnoreFile]
+  ): Seq[DatasetIgnoreFile] =
     publishContainer.datasetManager
       .setIgnoreFiles(publishContainer.dataset, ignoreFiles)
       .await
       .value
 
   def createPackage(
-                     user: User,
-                     name: String = generateRandomString(),
-                     nodeId: String = NodeCodes.generateId(NodeCodes.packageCode),
-                     `type`: PackageType = PackageType.Text,
-                     state: PackageState = PackageState.READY,
-                     dataset: Dataset = testDataset,
-                     parent: Option[Package] = None
-                   ): Package =
+    user: User,
+    name: String = generateRandomString(),
+    nodeId: String = NodeCodes.generateId(NodeCodes.packageCode),
+    `type`: PackageType = PackageType.Text,
+    state: PackageState = PackageState.READY,
+    dataset: Dataset = testDataset,
+    parent: Option[Package] = None
+  ): Package =
     createPackageInDb(
       databaseContainer,
       user,
@@ -2670,19 +2732,19 @@ class TestPublish
   }
 
   def createFile(
-                  `package`: Package,
-                  name: String = generateRandomString(),
-                  s3Bucket: String = sourceBucket,
-                  s3Key: String = "key/" + generateRandomString() + ".txt",
-                  fileType: FileType = FileType.Text,
-                  objectType: FileObjectType = FileObjectType.Source,
-                  processingState: FileProcessingState = FileProcessingState.Processed,
-                  size: Long = 0,
-                  content: String = generateRandomString(),
-                  uploadedState: Option[FileState] = None
-                )(implicit
-                  publishContainer: PublishContainer
-                ): File =
+    `package`: Package,
+    name: String = generateRandomString(),
+    s3Bucket: String = sourceBucket,
+    s3Key: String = "key/" + generateRandomString() + ".txt",
+    fileType: FileType = FileType.Text,
+    objectType: FileObjectType = FileObjectType.Source,
+    processingState: FileProcessingState = FileProcessingState.Processed,
+    size: Long = 0,
+    content: String = generateRandomString(),
+    uploadedState: Option[FileState] = None
+  )(implicit
+    publishContainer: PublishContainer
+  ): File =
     createFileS3Optional(
       publishContainer.fileManager,
       `package`,
@@ -2698,11 +2760,40 @@ class TestPublish
       Some(s3)
     )
 
+  def createFileV2(
+    `package`: Package,
+    name: String = generateRandomString(),
+    s3Bucket: String = sourceBucket,
+    s3Key: String = "key/" + generateRandomString() + ".txt",
+    fileType: FileType = FileType.Text,
+    objectType: FileObjectType = FileObjectType.Source,
+    processingState: FileProcessingState = FileProcessingState.Processed,
+    size: Long = 0,
+    content: String = generateRandomString(),
+    uploadedState: Option[FileState] = None
+  )(implicit
+    publishContainer: PublishContainer
+  ): (File, PutObjectResponse) =
+    createFileS3V2Optional(
+      publishContainer.fileManager,
+      `package`,
+      name,
+      s3Bucket,
+      s3Key,
+      fileType,
+      objectType,
+      processingState,
+      size,
+      content,
+      uploadedState,
+      Some(s3Client)
+    ).map(_.get)
+
   def s3FilesExistUnderKey(
-                            s3Bucket: String,
-                            s3KeyPrefix: String,
-                            matchExact: Boolean = false
-                          ): Boolean = {
+    s3Bucket: String,
+    s3KeyPrefix: String,
+    matchExact: Boolean = false
+  ): Boolean = {
     val usePrefix = if (matchExact) {
       s3KeyPrefix
     } else {
@@ -2719,12 +2810,12 @@ class TestPublish
   }
 
   def uploadManifest(
-                      s3Bucket: String,
-                      s3Key: String,
-                      manifest: DatasetMetadataV5_0
-                    )(implicit
-                      encoder: Encoder[DatasetMetadataV5_0]
-                    ): Unit = {
+    s3Bucket: String,
+    s3Key: String,
+    manifest: DatasetMetadataV5_0
+  )(implicit
+    encoder: Encoder[DatasetMetadataV5_0]
+  ): Unit = {
     val manifestJSON = manifest.asJson.toString()
     s3.putObject(s3Bucket, s3Key + Publish.MANIFEST_FILENAME, manifestJSON)
       .leftMap(e => {
@@ -2738,12 +2829,56 @@ class TestPublish
 
   def enableBucketVersioning(bucketName: String): Either[Throwable, Unit] = {
     val enableVersioningRequest = new SetBucketVersioningConfigurationRequest(
-      publishBucket,
+      bucketName,
       new BucketVersioningConfiguration(BucketVersioningConfiguration.ENABLED)
     )
     Either.catchNonFatal {
       s3.client.setBucketVersioningConfiguration(enableVersioningRequest)
     }
+  }
+
+  def setupManifestIfRequired(
+    publishContainer: PublishContainer,
+    manifest: Option[DatasetMetadataV5_0] = None
+  ): Unit = {
+    if (publishContainer.version > 1) {
+      uploadManifest(
+        publishContainer.s3Bucket,
+        publishContainer.s3Key,
+        manifest.getOrElse(newManifest(version = publishContainer.version - 1))
+      )
+    }
+  }
+
+  def uploadPublishedPackage(
+    publishContainer: PublishContainer,
+    name: String,
+    path: String,
+    sourcePackageId: String = NodeCodes.generateId(NodeCodes.packageCode),
+    fileType: FileType = FileType.Data,
+    content: String = generateRandomString()
+  ): FileManifest = {
+    val size = content.getBytes("UTF-8").length
+
+    val s3Key = utils.joinKeys(publishContainer.s3Key, path)
+    val putResponse = createS3FileV2(
+      s3Client = publishContainer.s3Client,
+      s3Bucket = publishContainer.s3Bucket,
+      s3Key = s3Key,
+      content = content
+    )
+
+    val s3VersionId = Option(putResponse.versionId())
+    val sha256 = Option(putResponse.checksumSHA256())
+    FileManifest(
+      name = name,
+      size = size,
+      fileType = fileType,
+      path = path,
+      s3VersionId = s3VersionId,
+      sha256 = sha256,
+      sourcePackageId = Some(sourcePackageId)
+    )
   }
 
 }
