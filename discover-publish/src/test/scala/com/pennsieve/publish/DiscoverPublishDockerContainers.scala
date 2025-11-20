@@ -51,6 +51,9 @@ object DiscoverPublishDockerContainers {
   val s3Container: S3DockerContainerImpl =
     new S3DockerContainerImpl
 
+  val mockServerContainer: MockServerDockerContainerImpl =
+    new MockServerDockerContainerImpl
+
 }
 
 object S3DockerContainer {

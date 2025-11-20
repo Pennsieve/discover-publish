@@ -96,7 +96,7 @@ class TestPublishS3Requests
     with Matchers
     with PersistantTestContainers
     with MockServerDockerContainer
-    with PostgresDockerContainer
+    with DiscoverPublishPostgresDockerContainer
     with TestDatabase
     with BeforeAndAfterEach
     with BeforeAndAfterAll

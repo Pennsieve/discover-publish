@@ -20,13 +20,7 @@ import akka.actor.ActorSystem
 import com.amazonaws.services.s3.model.S3ObjectSummary
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.models.Organization
-import com.pennsieve.test.helpers.TestDatabase
-import com.pennsieve.test.{
-  PersistantTestContainers,
-  PostgresDockerContainer,
-  S3DockerContainer
-}
-import com.typesafe.config.{ Config, ConfigFactory }
+import com.pennsieve.test.PersistantTestContainers
 import org.scalatest.{
   Assertion,
   BeforeAndAfterAll,
@@ -36,39 +30,11 @@ import org.scalatest.{
 }
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
-import software.amazon.awssdk.auth.credentials.{
-  AwsBasicCredentials,
-  StaticCredentialsProvider
-}
-import software.amazon.awssdk.endpoints.Endpoint
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
-import software.amazon.awssdk.regions.Region
-import software.amazon.awssdk.services.s3.{ S3Client, S3Configuration }
-import software.amazon.awssdk.services.s3.endpoints.{
-  S3EndpointParams,
-  S3EndpointProvider
-}
-import software.amazon.awssdk.services.s3.internal.crossregion.endpointprovider.BucketEndpointProvider
-
-import java.net.URI
-import java.util.concurrent.CompletableFuture
+import software.amazon.awssdk.services.s3.S3Client
 import scala.jdk.CollectionConverters._
 import scala.collection.mutable
 import scala.concurrent.duration.Duration
 import scala.concurrent.{ Await, ExecutionContext, Future }
-
-class MockS3EndpointProvider(awsS3EndpointUrl: String)
-    extends S3EndpointProvider {
-  override def resolveEndpoint(
-    endpointParams: S3EndpointParams
-  ): CompletableFuture[Endpoint] =
-    CompletableFuture.completedFuture(
-      Endpoint
-        .builder()
-        .url(URI.create(awsS3EndpointUrl + "/" + endpointParams.bucket()))
-        .build()
-    )
-}
 
 class TestMultipartUploader
     extends AnyWordSpec
@@ -77,7 +43,7 @@ class TestMultipartUploader
     with BeforeAndAfterAll
     with BeforeAndAfterEach
     with PersistantTestContainers
-    with S3DockerContainer
+    with DiscoverPublishS3DockerContainer
     with ValueHelper {
   self: Suite =>
 
@@ -100,30 +66,7 @@ class TestMultipartUploader
     println(s"afterStart() s3Container.endpointUrl: ${s3Container.endpointUrl}")
     s3 = new S3(s3Container.s3Client)
 
-    s3Client = {
-      val region = Region.US_EAST_1
-      val sharedHttpClient = UrlConnectionHttpClient
-        .builder()
-        .build()
-      S3Client.builder
-        .region(region)
-        .httpClient(sharedHttpClient)
-        .endpointOverride(URI.create(s3Container.endpointUrl))
-        .endpointProvider(new MockS3EndpointProvider(s3Container.endpointUrl))
-        .serviceConfiguration(
-          S3Configuration
-            .builder()
-            .pathStyleAccessEnabled(false)
-            .build()
-        )
-        .credentialsProvider(
-          StaticCredentialsProvider.create(
-            AwsBasicCredentials
-              .create(S3DockerContainer.accessKey, S3DockerContainer.secretKey)
-          )
-        )
-        .build
-    }
+    s3Client = s3Container.s3ClientV2
   }
 
   override def beforeEach(): Unit = {
@@ -255,23 +198,23 @@ class TestMultipartUploader
       result shouldEqual CopyOperation.MultipartCopy
     }
 
-//    "should copy a file" in {
-//      val s3Key = "99/66/test.dat"
-//      val expectedETag = "test"
-//      val expectedSHA256 = "test"
-//      createS3File(s3, sourceBucket, s3Key)
-//      val completedUploadF = multipartUploader
-//        .copy(
-//          UploadRequest(
-//            sourceBucket = sourceBucket,
-//            sourceKey = s3Key,
-//            destinationBucket = publishBucket,
-//            destinationKey = s3Key
-//          )
-//        )
-//      val completedUpload = await(completedUploadF)
-//      println(s"completedUpload: ${completedUpload}")
-//    }
+    //    "should copy a file" in {
+    //      val s3Key = "99/66/test.dat"
+    //      val expectedETag = "test"
+    //      val expectedSHA256 = "test"
+    //      createS3File(s3, sourceBucket, s3Key)
+    //      val completedUploadF = multipartUploader
+    //        .copy(
+    //          UploadRequest(
+    //            sourceBucket = sourceBucket,
+    //            sourceKey = s3Key,
+    //            destinationBucket = publishBucket,
+    //            destinationKey = s3Key
+    //          )
+    //        )
+    //      val completedUpload = await(completedUploadF)
+    //      println(s"completedUpload: ${completedUpload}")
+    //    }
 
   }
 
