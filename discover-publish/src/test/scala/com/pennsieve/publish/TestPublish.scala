@@ -2653,22 +2653,8 @@ class TestPublish
   /**
     * Read file contents from S3 as a string.
     */
-  def downloadFile(s3Bucket: String, s3Key: String): String = {
-    val stream: InputStream = s3
-      .getObject(s3Bucket, s3Key)
-      .leftMap(e => {
-        println(s"Error downloading s3://$s3Bucket/$s3Key")
-        e
-      })
-      .map(_.getObjectContent())
-      .value
-
-    try {
-      IOUtils.toString(stream, "utf-8")
-    } finally {
-      stream.close()
-    }
-  }
+  def downloadFile(s3Bucket: String, s3Key: String): String =
+    downloadContentAndObject(s3Bucket, s3Key)._1
 
   def downloadContentAndObject(
     s3Bucket: String,
