@@ -54,6 +54,7 @@ import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.{
+  ChecksumMode,
   GetObjectRequest,
   GetObjectResponse,
   PutObjectResponse
@@ -177,6 +178,7 @@ class TestPublish
     val versioning = enableBucketVersioning(publishBucket)
     versioning.isRight shouldBe true
     s3.createBucket(embargoBucket).isRight shouldBe true
+    enableBucketVersioning(embargoBucket).isRight shouldBe true
     s3.createBucket(assetBucket).isRight shouldBe true
     s3.createBucket(sourceBucket).isRight shouldBe true
 
@@ -744,7 +746,7 @@ class TestPublish
       setupManifestIfRequired(publishContainer, Some(existingManifest))
 
       val pkg1 = createPackage(testUser, name = "pkg1")
-      val (_, putResponse1) = createFileV2(
+      createFileV2(
         pkg1,
         name = "file1",
         s3Key = "key/file.txt",
@@ -754,7 +756,7 @@ class TestPublish
 
       // Package with multiple file sources
       val pkg2 = createPackage(testUser, name = "pkg2")
-      val (_, putResponse2) = createFileV2(
+      createFileV2(
         pkg2,
         name = "file2",
         s3Key = "key/file2.dcm",
@@ -762,7 +764,7 @@ class TestPublish
         size = 2222,
         fileType = FileType.DICOM
       )
-      val (_, putResponse3) = createFileV2(
+      createFileV2(
         pkg2,
         name = "file3",
         s3Key = "key/file3.dcm",
@@ -820,15 +822,24 @@ class TestPublish
       tempResults.totalSize > 0 shouldBe true
 
       // should export package and metadata files to publish bucket
-      downloadFile(publishBucket, publishContainer.s3Key + "files/pkg1.txt") shouldBe "data data"
-      downloadFile(
+      val (pkg1File, pkg1Obj) = downloadContentAndObject(
+        publishBucket,
+        publishContainer.s3Key + "files/pkg1.txt"
+      )
+
+      pkg1File shouldBe "data data"
+
+      val (pkg2File2, pkg2Obj2) = downloadContentAndObject(
         publishBucket,
         publishContainer.s3Key + "files/pkg2/file2.dcm"
-      ) shouldBe "atad atad"
-      downloadFile(
+      )
+      pkg2File2 shouldBe "atad atad"
+
+      val (pkg2File3, pkg2Obj3) = downloadContentAndObject(
         publishBucket,
         publishContainer.s3Key + "files/pkg2/file3.dcm"
-      ) shouldBe "double data"
+      )
+      pkg2File3 shouldBe "double data"
 
       val (metadataSchemaJson, metadataSchemaObject) =
         downloadContentAndObject(
@@ -842,8 +853,8 @@ class TestPublish
           publishContainer.s3Key + s"${Publish.BANNER_FILENAME}"
         )
       bannerJpg shouldBe "banner-data"
-      val readmeMarkdown =
-        downloadFile(
+      val (readmeMarkdown, readmeObject) =
+        downloadContentAndObject(
           publishBucket,
           publishContainer.s3Key + s"${Publish.README_FILENAME}"
         )
@@ -918,8 +929,8 @@ class TestPublish
               2222,
               FileType.DICOM,
               Some(pkg2.nodeId),
-              s3VersionId = Option(putResponse2.versionId()),
-              sha256 = Option(putResponse2.checksumSHA256())
+              s3VersionId = Option(pkg2Obj2.versionId()),
+              sha256 = Option(pkg2Obj2.checksumSHA256())
             ),
             FileManifest(
               "file3",
@@ -927,8 +938,8 @@ class TestPublish
               3333,
               FileType.DICOM,
               Some(pkg2.nodeId),
-              s3VersionId = Option(putResponse3.versionId()),
-              sha256 = Option(putResponse3.checksumSHA256())
+              s3VersionId = Option(pkg2Obj3.versionId()),
+              sha256 = Option(pkg2Obj3.checksumSHA256())
             ),
             FileManifest(
               "file1",
@@ -936,14 +947,15 @@ class TestPublish
               1234,
               FileType.Text,
               Some(pkg1.nodeId),
-              s3VersionId = Option(putResponse1.versionId()),
-              sha256 = Option(putResponse1.checksumSHA256())
+              s3VersionId = Option(pkg1Obj.versionId()),
+              sha256 = Option(pkg1Obj.checksumSHA256())
             ),
             FileManifest(
               Publish.README_FILENAME,
               Publish.README_FILENAME,
               readmeMarkdown.length,
-              FileType.Markdown
+              FileType.Markdown,
+              s3VersionId = Option(readmeObject.versionId())
             ),
             FileManifest(
               "schema.json",
@@ -966,27 +978,34 @@ class TestPublish
       assert(!s3FilesExistUnderKey(embargoBucket, publishContainer.s3Key))
 
       // seed the embargo bucket:
-      createS3File(
-        s3,
-        embargoBucket,
-        s"${publishContainer.s3Key}/delete-prefix-key/delete-file.txt"
+      val existingFile1 = uploadPublishedPackage(
+        embargoContainer,
+        "delete-file.txt",
+        "delete-prefix-key/delete-file.txt"
       )
-      createS3File(
-        s3,
-        embargoBucket,
-        s"${publishContainer.s3Key}/some-other-prefix/sub-key/another-file.txt"
+      val existingFile2 = uploadPublishedPackage(
+        embargoContainer,
+        "another-file.txt",
+        "some-other-prefix/sub-key/another-file.txt"
       )
+      val existingManifest = newManifest(
+        version = embargoContainer.version - 1,
+        files = List(existingFile1, existingFile2)
+      )
+      setupManifestIfRequired(embargoContainer, Some(existingManifest))
 
       val pkg1 = createPackage(testUser, name = "pkg1")
-      val file1 = createFile(
+      createFileV2(
         pkg1,
         name = "file1",
         s3Key = "key/file.txt",
         content = "data data",
         size = 1234
       )
+
+      // Package with multiple file sources
       val pkg2 = createPackage(testUser, name = "pkg2")
-      val file2 = createFile(
+      createFileV2(
         pkg2,
         name = "file2",
         s3Key = "key/file2.dcm",
@@ -994,7 +1013,7 @@ class TestPublish
         size = 2222,
         fileType = FileType.DICOM
       )
-      val file3 = createFile(
+      createFileV2(
         pkg2,
         name = "file3",
         s3Key = "key/file3.dcm",
@@ -1033,59 +1052,86 @@ class TestPublish
       val tempResults = decode[Publish.TempPublishResults](
         downloadFile(embargoBucket, publishContainer.s3Key + "outputs.json")
       ).value
-      tempResults.readmeKey shouldBe publishContainer.s3Key + Publish.README_FILENAME
-      tempResults.bannerKey shouldBe publishContainer.s3Key + Publish.BANNER_FILENAME
-      tempResults.changelogKey shouldBe publishContainer.s3Key + Publish.CHANGELOG_FILENAME
+
+      val assetKeyPrefix = publicAssetKeyPrefix(publishContainer)
+      tempResults.readmeKey shouldBe utils.joinKeys(
+        assetKeyPrefix,
+        Publish.README_FILENAME
+      )
+      tempResults.bannerKey shouldBe utils.joinKeys(
+        assetKeyPrefix,
+        Publish.BANNER_FILENAME
+      )
+      tempResults.changelogKey shouldBe utils.joinKeys(
+        assetKeyPrefix,
+        Publish.CHANGELOG_FILENAME
+      )
       tempResults.totalSize > 0 shouldBe true
 
       // should export package and metadata files to publish bucket
-      downloadFile(embargoBucket, publishContainer.s3Key + "files/pkg1.txt") shouldBe "data data"
-      downloadFile(
+      val (pkg1File1, pkg1Obj1) = downloadContentAndObject(
+        embargoBucket,
+        publishContainer.s3Key + "files/pkg1.txt"
+      )
+      pkg1File1 shouldBe "data data"
+
+      val (pkg2File2, pkg2Obj2) = downloadContentAndObject(
         embargoBucket,
         publishContainer.s3Key + "files/pkg2/file2.dcm"
-      ) shouldBe "atad atad"
-      downloadFile(
+      )
+      pkg2File2 shouldBe "atad atad"
+
+      val (pkg2File3, pkg2Obj3) = downloadContentAndObject(
         embargoBucket,
         publishContainer.s3Key + "files/pkg2/file3.dcm"
-      ) shouldBe "double data"
+      )
+      pkg2File3 shouldBe "double data"
 
-      val metadataSchemaJson =
-        downloadFile(
+      val (metadataSchemaJson, metadataSchemaObj) =
+        downloadContentAndObject(
           embargoBucket,
           publishContainer.s3Key + "metadata/models/patient/versions/1/schema.json"
         )
 
-      val bannerJpg =
-        downloadFile(
+      val (bannerJpg, bannerObj) =
+        downloadContentAndObject(
           embargoBucket,
-          publishContainer.s3Key + s"/${Publish.BANNER_FILENAME}"
+          utils.joinKeys(publishContainer.s3Key, {
+            Publish.BANNER_FILENAME
+          })
         )
       bannerJpg shouldBe "banner-data"
-      val readmeMarkdown =
-        downloadFile(
+      val (readmeMarkdown, readmeObj) =
+        downloadContentAndObject(
           embargoBucket,
-          publishContainer.s3Key + s"/${Publish.README_FILENAME}"
+          utils.joinKeys(publishContainer.s3Key, Publish.README_FILENAME)
         )
       readmeMarkdown shouldBe "readme-data"
-      val changelogMarkdown =
-        downloadFile(
+      val (changelogMarkdown, changelogObj) =
+        downloadContentAndObject(
           embargoBucket,
-          publishContainer.s3Key + s"/${Publish.CHANGELOG_FILENAME}"
+          utils.joinKeys(publishContainer.s3Key, Publish.CHANGELOG_FILENAME)
         )
       changelogMarkdown shouldBe "changelog-data"
 
       // should write assets to public discover bucket
       downloadFile(
         assetBucket,
-        "dataset-assets/" + publishContainer.s3Key + Publish.BANNER_FILENAME
+        utils
+          .joinKeys(
+            Seq("dataset-assets/", assetKeyPrefix, Publish.BANNER_FILENAME)
+          )
       ) shouldBe "banner-data"
       downloadFile(
         assetBucket,
-        "dataset-assets/" + publishContainer.s3Key + Publish.README_FILENAME
+        utils
+          .joinKeys(
+            Seq("dataset-assets/", assetKeyPrefix, Publish.README_FILENAME)
+          )
       ) shouldBe "readme-data"
 
-      val metadata =
-        downloadFile(
+      val (metadata, _) =
+        downloadContentAndObject(
           embargoBucket,
           publishContainer.s3Key + Publish.MANIFEST_FILENAME
         )
@@ -1111,13 +1157,15 @@ class TestPublish
               Publish.CHANGELOG_FILENAME,
               Publish.CHANGELOG_FILENAME,
               changelogMarkdown.length,
-              FileType.Markdown
+              FileType.Markdown,
+              s3VersionId = Option(changelogObj.versionId())
             ),
             FileManifest(
               Publish.BANNER_FILENAME,
               Publish.BANNER_FILENAME,
               bannerJpg.length,
-              FileType.JPEG
+              FileType.JPEG,
+              s3VersionId = Option(bannerObj.versionId())
             ),
             FileManifest(
               Publish.MANIFEST_FILENAME,
@@ -1130,33 +1178,41 @@ class TestPublish
               "files/pkg2/file2.dcm",
               2222,
               FileType.DICOM,
-              Some(pkg2.nodeId)
+              Some(pkg2.nodeId),
+              s3VersionId = Option(pkg2Obj2.versionId()),
+              sha256 = Option(pkg2Obj2.checksumSHA256())
             ),
             FileManifest(
               "file3",
               "files/pkg2/file3.dcm",
               3333,
               FileType.DICOM,
-              Some(pkg2.nodeId)
+              Some(pkg2.nodeId),
+              s3VersionId = Option(pkg2Obj3.versionId()),
+              sha256 = Option(pkg2Obj3.checksumSHA256())
             ),
             FileManifest(
               "file1",
               "files/pkg1.txt",
               1234,
               FileType.Text,
-              Some(pkg1.nodeId)
+              Some(pkg1.nodeId),
+              s3VersionId = Option(pkg1Obj1.versionId()),
+              sha256 = Option(pkg1Obj1.checksumSHA256())
             ),
             FileManifest(
               Publish.README_FILENAME,
               Publish.README_FILENAME,
               readmeMarkdown.length,
-              FileType.Markdown
+              FileType.Markdown,
+              s3VersionId = Option(readmeObj.versionId())
             ),
             FileManifest(
               "schema.json",
               "metadata/models/patient/versions/1/schema.json",
               metadataSchemaJson.length,
-              FileType.Json
+              FileType.Json,
+              s3VersionId = Option(metadataSchemaObj.versionId())
             )
           ).sorted,
           pennsieveSchemaVersion = "5.0",
@@ -1167,6 +1223,9 @@ class TestPublish
     }
 
     "create metadata, package objects and public assets in S3 with ignored files (publish bucket)" in {
+
+      // set version to 1 so that publishAssets does not expect an existing manifest
+      val freshPublishContainer = publishContainer.copy(version = 1)
 
       // Package with a single file
       val pkg1 = createPackage(testUser, name = "pkg1")
@@ -1225,31 +1284,34 @@ class TestPublish
 
       val ignoreFiles = setDatasetIgnoreFiles(
         Seq(
-          DatasetIgnoreFile(publishContainer.dataset.id, file3.fileName),
-          DatasetIgnoreFile(publishContainer.dataset.id, file4.fileName),
-          DatasetIgnoreFile(publishContainer.dataset.id, file5.fileName)
+          DatasetIgnoreFile(freshPublishContainer.dataset.id, file3.fileName),
+          DatasetIgnoreFile(freshPublishContainer.dataset.id, file4.fileName),
+          DatasetIgnoreFile(freshPublishContainer.dataset.id, file5.fileName)
         )
       )
 
-      Publish.publishAssets(publishContainer).await.isRight shouldBe true
-      runMetadataPublish(publishBucket, publishContainer.s3Key)
+      Publish.publishAssets(freshPublishContainer).await.isRight shouldBe true
+      runMetadataPublish(publishBucket, freshPublishContainer.s3Key)
 
       // Finalizing the jobs should write an `output.json` and delete all other
       // temporary files
-      Publish.finalizeDataset(publishContainer).await shouldBe Right(())
+      Publish.finalizeDataset(freshPublishContainer).await shouldBe Right(())
 
       // should export package and metadata files to publish bucket
-      downloadFile(publishBucket, publishContainer.s3Key + "files/pkg1.txt") shouldBe "data data"
       downloadFile(
         publishBucket,
-        publishContainer.s3Key + "files/pkg2/file2.dcm"
+        freshPublishContainer.s3Key + "files/pkg1.txt"
+      ) shouldBe "data data"
+      downloadFile(
+        publishBucket,
+        freshPublishContainer.s3Key + "files/pkg2/file2.dcm"
       ) shouldBe "atad atad"
       // should ignore graph file (file3.dcm)
       assert(
         Try(
           downloadFile(
             publishBucket,
-            publishContainer.s3Key + "files/pkg2/file3.dcm"
+            freshPublishContainer.s3Key + "files/pkg2/file3.dcm"
           )
         ).toEither.isLeft
       )
@@ -1257,7 +1319,7 @@ class TestPublish
       val metadata =
         downloadFile(
           publishBucket,
-          publishContainer.s3Key + Publish.MANIFEST_FILENAME
+          freshPublishContainer.s3Key + Publish.MANIFEST_FILENAME
         )
 
       decode[DatasetMetadata](metadata).map(_.files.map(_.path)) shouldBe Right(
@@ -1293,6 +1355,9 @@ class TestPublish
     }
 
     "not publish deleted packages and files" in {
+      // Override version to 1, so that we don't expect an existing manifest.
+      val freshPublishContainer = publishContainer.copy(version = 1)
+
       // create package tree:
       //
       // primary
@@ -1368,7 +1433,7 @@ class TestPublish
       val _ = deletePackage(sub2FolderPackage)
 
       // publish
-      Publish.publishAssets(publishContainer).await.isRight shouldBe true
+      Publish.publishAssets(freshPublishContainer).await.isRight shouldBe true
 
       // get a listing of the Publish Bucket
       val bucketListing = listBucket(publishBucket).toList
@@ -1686,7 +1751,7 @@ class TestPublish
         .await
 
       downloadFile(file.s3Bucket, file.s3Key) shouldBe "some content"
-      downloadFile(publishBucket, s"base/$publishContainer.s3Key/test.txt") shouldBe "some content"
+      downloadFile(publishBucket, s"base/${publishContainer.s3Key}test.txt") shouldBe "some content"
     }
   }
 
@@ -2611,7 +2676,12 @@ class TestPublish
   ): (String, GetObjectResponse) = {
 
     val responseInputStream = s3Client.getObject(
-      GetObjectRequest.builder().bucket(s3Bucket).key(s3Key).build()
+      GetObjectRequest
+        .builder()
+        .bucket(s3Bucket)
+        .key(s3Key)
+        .checksumMode(ChecksumMode.ENABLED)
+        .build()
     )
     try {
       val content =
@@ -2655,19 +2725,22 @@ class TestPublish
       }
     """
 
-    s3.putObject(s3Bucket, schemaJsonKey, schemaJson)
+    val schemaJsonResp = s3
+      .putObject(s3Bucket, schemaJsonKey, schemaJson)
       .leftMap(e => {
         println(s"Error uploading s3://$s3Bucket/$schemaJsonKey")
         e
       })
-      .isRight shouldBe true
+
+    val schemaJsonVersionId = schemaJsonResp.value.getVersionId
 
     s3.putObject(s3Bucket, s3Key + Publish.METADATA_ASSETS_FILENAME, s"""{
       "manifests": [
         {
           "path": "metadata/models/patient/versions/1/schema.json",
           "size": ${schemaJson.length},
-          "fileType": "Json"
+          "fileType": "Json",
+          "s3VersionId": "${schemaJsonVersionId}"
         }
       ]}""")
       .leftMap(e => {
