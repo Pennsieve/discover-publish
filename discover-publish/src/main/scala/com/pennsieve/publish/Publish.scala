@@ -394,13 +394,13 @@ object Publish extends StrictLogging {
     executionContext: ExecutionContext,
     system: ActorSystem
   ): EitherT[Future, CoreError, DatasetMetadata] =
-    container.version match {
-      case 1 => EitherT.fromEither(Either.right(DatasetMetadataEmpty()))
-      case _ =>
-        downloadFromS3[DatasetMetadata](
-          container,
-          publishedManifestKey(container)
-        )
+    if (container.expectPrevious) {
+      downloadFromS3[DatasetMetadata](
+        container,
+        publishedManifestKey(container)
+      )
+    } else {
+      EitherT.fromEither(Either.right(DatasetMetadataEmpty()))
     }
 
   /**
