@@ -1230,7 +1230,7 @@ class TestPublish
 
     "create metadata, package objects and public assets in S3 with ignored files (publish bucket)" in {
 
-      // set version to 1 so that publishAssets does not expect an existing manifest
+      // set expectPrevious to false so that publishAssets does not expect an existing manifest
       val freshPublishContainer = publishContainer.copy(expectPrevious = false)
 
       // Package with a single file
@@ -1361,7 +1361,7 @@ class TestPublish
     }
 
     "not publish deleted packages and files" in {
-      // Override version to 1, so that we don't expect an existing manifest.
+      // Override expectPrevious to false, so that we don't expect an existing manifest.
       val freshPublishContainer = publishContainer.copy(expectPrevious = false)
 
       // create package tree:
