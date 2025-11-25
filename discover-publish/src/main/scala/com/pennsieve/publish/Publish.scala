@@ -61,6 +61,7 @@ object PublishingWorkflows {
   val Version4: Long = 4
   val Version5: Long = 5
 }
+
 object Publish extends StrictLogging {
 
   val PUBLISH_ASSETS_FILENAME: String = "publish.json"
@@ -269,6 +270,15 @@ object Publish extends StrictLogging {
         container,
         metadataManifestKey(container)
       ) recover {
+        // Its not an error for this file to be absent, but log any other error.
+        case ThrowableError(exception)
+            if !utils.isNoSuchKeyError(exception) => {
+          logger.error(
+            s"error reading intermediate metadata manifest: ${metadataManifestKey(container)}",
+            exception
+          )
+          ExportedMetadataResult.empty()
+        }
         case _ => ExportedMetadataResult.empty()
       }
 
@@ -296,19 +306,19 @@ object Publish extends StrictLogging {
         ).asJson
       )
 
-// handled by s3 cleanup lambda
-//      _ = logger.info(
-//        s"Deleting temporary files: $PUBLISH_ASSETS_FILENAME, $METADATA_ASSETS_FILENAME"
-//      )
-//
-//      _ <- container.s3
-//        .deleteObjectsByKeys(
-//          container.s3Bucket,
-//          Seq(publishedAssetsKey(container), metadataManifestKey(container)),
-//          isRequesterPays = true
-//        )
-//        .toEitherT[Future]
-//        .leftMap[CoreError](t => ExceptionError(new Exception(t)))
+      // handled by s3 cleanup lambda
+      //      _ = logger.info(
+      //        s"Deleting temporary files: $PUBLISH_ASSETS_FILENAME, $METADATA_ASSETS_FILENAME"
+      //      )
+      //
+      //      _ <- container.s3
+      //        .deleteObjectsByKeys(
+      //          container.s3Bucket,
+      //          Seq(publishedAssetsKey(container), metadataManifestKey(container)),
+      //          isRequesterPays = true
+      //        )
+      //        .toEitherT[Future]
+      //        .leftMap[CoreError](t => ExceptionError(new Exception(t)))
 
     } yield ()
 

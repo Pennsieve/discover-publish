@@ -97,7 +97,7 @@ final class MockServerDockerContainerImpl
 }
 
 trait MockServerDockerContainer extends StackedDockerContainer {
-  val mockServerContainer = new MockServerDockerContainerImpl
+  val mockServerContainer = DiscoverPublishDockerContainers.mockServerContainer
 
   override def stackedContainers =
     mockServerContainer :: super.stackedContainers

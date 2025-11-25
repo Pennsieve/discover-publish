@@ -178,7 +178,7 @@ class CopyFlowIntegrationTest
         s3Client = s3ClientV2,
         s3Bucket = publishBucket,
         s3AssetBucket = assetBucket,
-        s3Key = testKey,
+        s3Key = testKeyV5,
         s3AssetKeyPrefix = assetKeyPrefix,
         s3CopyChunkSize = s3CopyChunkSize,
         s3CopyChunkParallelism = s3CopyChunkParallelism,
@@ -195,7 +195,7 @@ class CopyFlowIntegrationTest
         collections = List(collection),
         externalPublications = List(externalPublication),
         datasetAssetClient = datasetAssetClient,
-        workflowId = PublishingWorkflows.Version4
+        workflowId = PublishingWorkflows.Version5
       )
     }
 
@@ -206,7 +206,7 @@ class CopyFlowIntegrationTest
         s3Client = s3ClientV2,
         s3Bucket = embargoBucket,
         s3AssetBucket = assetBucket,
-        s3Key = testKey,
+        s3Key = testKeyV5,
         s3AssetKeyPrefix = assetKeyPrefix,
         s3CopyChunkSize = s3CopyChunkSize,
         s3CopyChunkParallelism = s3CopyChunkParallelism,
@@ -223,7 +223,7 @@ class CopyFlowIntegrationTest
         collections = List(collection),
         externalPublications = List(externalPublication),
         datasetAssetClient = datasetAssetClient,
-        workflowId = PublishingWorkflows.Version4
+        workflowId = PublishingWorkflows.Version5
       )
     }
 

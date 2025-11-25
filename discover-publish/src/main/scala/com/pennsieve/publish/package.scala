@@ -16,8 +16,10 @@
 
 package com.pennsieve.publish
 
+import com.amazonaws.services.s3.model.AmazonS3Exception
 import org.apache.commons.lang3.StringUtils
 import com.pennsieve.models.Utilities._
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException
 
 package object utils {
 
@@ -33,5 +35,14 @@ package object utils {
 
   def joinKeys(keys: Seq[String]): String =
     keys.fold("")(joinKeys)
+
+  // we use a combo of SDK v1 and v2, so this is a helper to return true
+  // if the given exception indicates that an S3 key does not exist no matter which
+  // SDK version is used.
+  def isNoSuchKeyError(e: Throwable): Boolean = e match {
+    case _: NoSuchKeyException => true
+    case s3e: AmazonS3Exception if s3e.getErrorCode == "NoSuchKey" => true
+    case _ => false
+  }
 
 }

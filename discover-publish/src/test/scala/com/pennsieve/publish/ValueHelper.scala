@@ -15,19 +15,24 @@
  */
 
 package com.pennsieve.publish
+
+import com.amazonaws.services.s3.model.ObjectMetadata
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.managers.{ DatasetStatusManager, FileManager }
 import com.pennsieve.models.{
   Dataset,
   DatasetAsset,
+  DatasetMetadataV5_0,
   DatasetState,
   DatasetStatus,
   Doi,
   File,
+  FileManifest,
   FileObjectType,
   FileProcessingState,
   FileState,
   FileType,
+  License,
   NodeCodes,
   Organization,
   Package,
@@ -36,7 +41,9 @@ import com.pennsieve.models.{
   PublishedCollection,
   PublishedContributor,
   PublishedExternalPublication,
+  ReferenceMetadataV5_0,
   RelationshipType,
+  ReleaseMetadataV5_0,
   User
 }
 import com.pennsieve.test.helpers.AwaitableImplicits.toAwaitable
@@ -44,7 +51,17 @@ import com.pennsieve.traits.PostgresProfile.api._
 import org.scalatest.Assertion
 import org.scalatest.EitherValues._
 import org.scalatest.matchers.should.Matchers
+import software.amazon.awssdk.core.sync.RequestBody
+import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.{
+  ChecksumAlgorithm,
+  PutObjectRequest,
+  PutObjectResponse
+}
 
+import java.security.MessageDigest
+import java.time.{ LocalDate, ZoneId }
+import java.util.Base64
 import scala.concurrent.ExecutionContext
 import scala.util.Random
 
@@ -54,7 +71,8 @@ trait ValueHelper extends Matchers {
   val embargoBucket = "test-embargo-bucket"
   val assetBucket = "test-asset-bucket"
   val assetKeyPrefix = "dataset-assets"
-  val testKey = "100/10/"
+  val testKeyV4 = "100/10/"
+  val testKeyV5 = "100/"
   val copyChunkSize = 5242880
   val copyParallelism = 5
   val testDoi: String = "10.38492/234.7"
@@ -124,6 +142,56 @@ trait ValueHelper extends Matchers {
     )
   }
 
+  def newManifest(
+    pennsieveDatasetId: Int = Random.nextInt(10000),
+    version: Int = Random.nextInt(10) + 1,
+    revision: Option[Int] = Some(Random.nextInt(10)),
+    name: String = generateRandomString(),
+    description: String = generateRandomString(),
+    creator: PublishedContributor = contributor,
+    contributors: List[PublishedContributor] = List.empty,
+    sourceOrganization: String = s"Test Organization ${Random.nextInt(100)}",
+    keywords: List[String] = List.empty,
+    datePublished: LocalDate = LocalDate.now(),
+    license: Option[License] = None,
+    `@id`: String = generateRandomString(),
+    publisher: String = "The University of Pennsylvania",
+    `@context`: String = "http://schema.org/",
+    `@type`: String = "Dataset",
+    schemaVersion: String = "http://schema.org/version/3.7/",
+    collections: Option[List[PublishedCollection]] = None,
+    relatedPublications: Option[List[PublishedExternalPublication]] = None,
+    files: List[FileManifest] = List.empty,
+    release: Option[ReleaseMetadataV5_0] = None,
+    references: Option[ReferenceMetadataV5_0] = None,
+    pennsieveSchemaVersion: String = "5.0"
+  ): DatasetMetadataV5_0 = {
+    DatasetMetadataV5_0(
+      pennsieveDatasetId = pennsieveDatasetId,
+      version = version,
+      revision = revision,
+      name = name,
+      description = description,
+      creator = creator,
+      contributors = contributors,
+      sourceOrganization = sourceOrganization,
+      keywords = keywords,
+      datePublished = datePublished,
+      license = license,
+      `@id` = `@id`,
+      publisher = publisher,
+      `@context` = `@context`,
+      `@type` = `@type`,
+      schemaVersion = schemaVersion,
+      collections = collections,
+      relatedPublications = relatedPublications,
+      files = files,
+      release = release,
+      references = references,
+      pennsieveSchemaVersion = pennsieveSchemaVersion
+    )
+  }
+
   def createUser(
     databaseContainer: InsecureDatabaseContainer,
     email: String = s"test+${generateRandomString()}@pennsieve.org",
@@ -174,8 +242,34 @@ trait ValueHelper extends Matchers {
     s3Bucket: String,
     s3Key: String,
     content: String = generateRandomString()
-  ): Assertion =
-    s3.putObject(s3Bucket, s3Key, content).isRight shouldBe true
+  ): Assertion = s3.putObject(s3Bucket, s3Key, content).isRight shouldBe true
+
+  // createS3FileV2 puts an object into the given bucket and key using the SDK V2 client
+  // so that it can request ChecksumAlgorithm.SHA256, not available in SDK V1 client.
+  def createS3FileV2(
+    s3Client: S3Client,
+    s3Bucket: String,
+    s3Key: String,
+    content: String = generateRandomString()
+  ): PutObjectResponse = {
+    val contentBytes = content.getBytes("UTF-8")
+
+    // Calculate SHA256 checksum since both minio and localstack
+    // report checksum mismatch if we just use .checksumAlgorithm(ChecksumAlgorithm.SHA256)
+    // to let the SDK compute the hash.
+    val digest = MessageDigest.getInstance("SHA-256")
+    val hash = digest.digest(contentBytes)
+    val checksumSHA256 = Base64.getEncoder.encodeToString(hash)
+    val request = PutObjectRequest
+      .builder()
+      .bucket(s3Bucket)
+      .key(s3Key)
+      //.checksumAlgorithm(ChecksumAlgorithm.SHA256)
+      .checksumSHA256(checksumSHA256)
+      .build()
+
+    s3Client.putObject(request, RequestBody.fromString(content))
+  }
 
   def createAsset(
     databaseContainer: InsecureDatabaseContainer,
@@ -327,5 +421,55 @@ trait ValueHelper extends Matchers {
     s3.foreach(createS3File(_, file.s3Bucket, file.s3Key, content = content))
     file
   }
+
+  // Uses a SDK V2 client to create the S3 object if requested.
+  def createFileS3V2Optional(
+    fileManager: FileManager,
+    `package`: Package,
+    name: String = generateRandomString(),
+    s3Bucket: String = sourceBucket,
+    s3Key: String = "key/" + generateRandomString() + ".txt",
+    fileType: FileType = FileType.Text,
+    objectType: FileObjectType = FileObjectType.Source,
+    processingState: FileProcessingState = FileProcessingState.Processed,
+    size: Long = 0,
+    content: String = generateRandomString(),
+    uploadedState: Option[FileState] = None,
+    s3Client: Option[S3Client] = None
+  )(implicit
+    executionContext: ExecutionContext
+  ): (File, Option[PutObjectResponse]) = {
+    val file = fileManager
+      .create(
+        name,
+        fileType,
+        `package`,
+        s3Bucket,
+        s3Key,
+        objectType,
+        processingState,
+        size,
+        uploadedState = uploadedState
+      )
+      .await match {
+      case Right(x) => x
+      case Left(e) => throw e
+    }
+
+    val uploadResponse = s3Client.map(
+      createS3FileV2(_, file.s3Bucket, file.s3Key, content = content)
+    )
+    (file, uploadResponse)
+  }
+
+  def publicAssetKeyPrefix(publishContainer: PublishContainer): String =
+    publishContainer.workflowId match {
+      case PublishingWorkflows.Version4 => publishContainer.s3Key
+      case _ =>
+        utils.joinKeys(
+          publishContainer.publishedDatasetId.toString,
+          publishContainer.version.toString
+        )
+    }
 
 }
