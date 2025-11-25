@@ -195,7 +195,8 @@ class CopyFlowIntegrationTest
         collections = List(collection),
         externalPublications = List(externalPublication),
         datasetAssetClient = datasetAssetClient,
-        workflowId = PublishingWorkflows.Version5
+        workflowId = PublishingWorkflows.Version5,
+        expectPrevious = true
       )
     }
 
@@ -223,7 +224,8 @@ class CopyFlowIntegrationTest
         collections = List(collection),
         externalPublications = List(externalPublication),
         datasetAssetClient = datasetAssetClient,
-        workflowId = PublishingWorkflows.Version5
+        workflowId = PublishingWorkflows.Version5,
+        expectPrevious = true
       )
     }
 
