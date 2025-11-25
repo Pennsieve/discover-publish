@@ -15,16 +15,14 @@
  */
 
 package com.pennsieve.publish
+
 import akka.actor.ActorSystem
-import com.amazonaws.services.s3.AmazonS3
+import com.amazonaws.services.s3.{ model, AmazonS3 }
 import com.amazonaws.services.s3.model.{
-  CopyObjectRequest,
-  CopyObjectResult,
-  DeleteObjectRequest,
-  DeleteObjectsRequest,
   GetObjectRequest,
   ObjectMetadata,
   PutObjectRequest,
+  PutObjectResult,
   S3Object,
   S3ObjectInputStream
 }
@@ -38,9 +36,11 @@ import com.pennsieve.clients.S3DatasetAssetClient
 import com.pennsieve.managers.FileManager
 import com.pennsieve.models.{
   Dataset,
+  DatasetMetadataV5_0,
   FileManifest,
   FileType,
   Organization,
+  PublishedContributor,
   Role,
   User
 }
@@ -65,10 +65,17 @@ import org.mockserver.model.HttpResponse.response
 import org.scalamock.matchers.ArgCapture.CaptureAll
 import org.scalatest.{ BeforeAndAfterAll, BeforeAndAfterEach }
 import org.scalatest.Inspectors._
-import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
-import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.{
+  CopyObjectRequest,
+  CopyObjectResponse,
+  CopyObjectResult,
+  GetObjectAttributesRequest,
+  GetObjectAttributesResponse,
+  RequestPayer
+}
 
+import java.time.LocalDate
 import java.util.UUID
 import scala.concurrent.ExecutionContext
 
@@ -76,9 +83,12 @@ import scala.concurrent.ExecutionContext
   * This class is testing that all S3 requests for the publish bucket
   * are setting the requester pays header.
   *
-  * Publishing accesses S3 two ways: 1) using our own S3 which wraps an AmazonS3 and 2) using Akka's Alpakka library
-  * For 1) we use a ScalaMock in place of a real AmazonS3 and capture the requests.
-  * For 2) there is no client to mock, so we use MockServer to mock the S3 backend and
+  * Publishing accesses S3 three ways:
+  * 1) using our own S3 which wraps an AWS SDK V1 AmazonS3,
+  * 2) using an AWS SDK V2 S3Client, and
+  * 3) using Akka's Alpakka library
+  * For 1) & 2) we use ScalaMocks in place of a real AmazonS3/S3Client and capture the requests.
+  * For 3) there is no client to mock, so we use MockServer to mock the S3 backend and
   * again check all requests sent for the desired header.
   */
 class TestPublishS3Requests
@@ -86,7 +96,7 @@ class TestPublishS3Requests
     with Matchers
     with PersistantTestContainers
     with MockServerDockerContainer
-    with PostgresDockerContainer
+    with DiscoverPublishPostgresDockerContainer
     with TestDatabase
     with BeforeAndAfterEach
     with BeforeAndAfterAll
@@ -96,7 +106,7 @@ class TestPublishS3Requests
 
   val testOrganization: Organization = sampleOrganization
 
-  val publishAssetResult: PublishAssetResult = PublishAssetResult(
+  val publishAssetResult: PublishAssetResult = PublishAssetResult.apply(
     externalIdToPackagePath = Map.empty,
     packageManifests = Nil,
     bannerKey = Publish.BANNER_FILENAME,
@@ -134,11 +144,42 @@ class TestPublishS3Requests
   var config: Config = _
   var databaseContainer: InsecureDatabaseContainer = _
   var mockAmazonS3: AmazonS3 = _
+  var mockS3Client: S3Client = _
   var publishContainer: PublishContainer = _
   var mockServerClient: MockServerClient = _
   var testUser: User = _
   var testDataset: Dataset = _
   var datasetFileInfos: Vector[DatasetFileInfo] = _
+
+  val owner: PublishedContributor =
+    PublishedContributor(
+      first_name = "Shigeru",
+      middle_initial = None,
+      last_name = "Miyamoto",
+      degree = None,
+      orcid = Some("0000-0001-0221-1986")
+    )
+
+  val datasetManifest: DatasetMetadataV5_0 = DatasetMetadataV5_0(
+    pennsieveDatasetId = 100,
+    version = 10,
+    revision = None,
+    name = "name",
+    description = "description",
+    creator = owner,
+    contributors = List(contributor),
+    sourceOrganization = testOrganization.name,
+    keywords = List("test"),
+    datePublished = LocalDate.now(),
+    license = None,
+    `@id` = s"https://doi.org/$testDoi",
+    collections = Some(List(collection)),
+    relatedPublications = Some(List(externalPublication)),
+    files = List.empty,
+    pennsieveSchemaVersion = "5.0",
+    release = None,
+    references = None
+  )
 
   class DatasetFileInfo(
     val sourceKey: String,
@@ -188,14 +229,7 @@ class TestPublishS3Requests
   override def beforeEach(): Unit = {
     mockAmazonS3 = mock[AmazonS3]
     val testS3 = new S3(mockAmazonS3)
-    val s3Client = {
-      val region = Region.US_EAST_1
-      val sharedHttpClient = UrlConnectionHttpClient.builder().build()
-      S3Client.builder
-        .region(region)
-        .httpClient(sharedHttpClient)
-        .build
-    }
+    mockS3Client = mock[S3Client]
 
     testUser = createUser(databaseContainer)
     testDataset = createDatasetWithAssets(databaseContainer = databaseContainer)
@@ -203,10 +237,10 @@ class TestPublishS3Requests
     publishContainer = PublishContainer(
       config = config,
       s3 = testS3,
-      s3Client = s3Client,
+      s3Client = mockS3Client,
       s3Bucket = publishBucket,
       s3AssetBucket = assetBucket,
-      s3Key = testKey,
+      s3Key = testKeyV5,
       s3AssetKeyPrefix = assetKeyPrefix,
       s3CopyChunkSize = copyChunkSize,
       s3CopyChunkParallelism = copyParallelism,
@@ -223,7 +257,7 @@ class TestPublishS3Requests
       collections = List(collection),
       externalPublications = List(externalPublication),
       datasetAssetClient = new S3DatasetAssetClient(testS3, assetBucket),
-      workflowId = PublishingWorkflows.Version4
+      workflowId = PublishingWorkflows.Version5
     )
 
     datasetFileInfos =
@@ -266,7 +300,6 @@ class TestPublishS3Requests
 
       val getObjectCapture = CaptureAll[GetObjectRequest]()
       val putObjectCapture = CaptureAll[PutObjectRequest]()
-      val deleteObjectsCapture = CaptureAll[DeleteObjectsRequest]()
 
       (mockAmazonS3
         .getObject(_: GetObjectRequest))
@@ -284,10 +317,11 @@ class TestPublishS3Requests
         .putObject(_: PutObjectRequest))
         .expects(capture(putObjectCapture))
         .twice()
-
-//      (mockAmazonS3
-//        .deleteObjects(_: DeleteObjectsRequest))
-//        .expects(capture(deleteObjectsCapture))
+        .returning({
+          val result = new PutObjectResult()
+          result.setVersionId(generateRandomString())
+          result
+        })
 
       Publish
         .finalizeDataset(publishContainer)
@@ -300,9 +334,6 @@ class TestPublishS3Requests
       forAll(putObjectCapture.values.filter(_.getBucketName == publishBucket)) {
         _.isRequesterPays should be(true)
       }
-      forAll(
-        deleteObjectsCapture.values.filter(_.getBucketName == publishBucket)
-      ) { _.isRequesterPays should be(true) }
 
     }
   }
@@ -320,40 +351,105 @@ class TestPublishS3Requests
       val akkaCompleteMultipartRequests: Vector[HttpRequest] =
         akkaCompleteMultipartExpectation()
 
-      val copyObjectCapture = CaptureAll[CopyObjectRequest]()
-      val putObjectCapture = CaptureAll[PutObjectRequest]()
+      val copyObjectV1Capture =
+        CaptureAll[com.amazonaws.services.s3.model.CopyObjectRequest]()
+      val copyObjectV2Capture = CaptureAll[CopyObjectRequest]()
+      val putObjectV1Capture = CaptureAll[PutObjectRequest]()
+
+      val getObjectCapture = CaptureAll[GetObjectRequest]()
+
+      val datasetMetadataObject =
+        mockS3Object(datasetManifest.asJson.toString())
+
+      // mockAmazonS3 uses V1 of aws sdk
+      (mockAmazonS3
+        .getObject(_: GetObjectRequest))
+        .expects(capture(getObjectCapture))
+        .once()
+        .onCall { r: GetObjectRequest =>
+          if (r.getKey.endsWith(Publish.MANIFEST_FILENAME)) {
+            datasetMetadataObject
+          } else fail(s"Unexpected get object key: ${r.getKey}")
+        }
 
       (mockAmazonS3
-        .copyObject(_: CopyObjectRequest))
-        .expects(capture(copyObjectCapture))
-        .repeated(6)
-        .returning(new CopyObjectResult())
+        .copyObject(_: com.amazonaws.services.s3.model.CopyObjectRequest))
+        .expects(capture(copyObjectV1Capture))
+        .anyNumberOfTimes()
+        .returning({
+          val result = new model.CopyObjectResult()
+          result.setVersionId(generateRandomString())
+          result
+        })
 
       (mockAmazonS3
         .putObject(_: PutObjectRequest))
-        .expects(capture(putObjectCapture))
+        .expects(capture(putObjectV1Capture))
+        .anyNumberOfTimes()
+        .returning(new PutObjectResult())
 
-      // We don't capture these requests because they read from the asset bucket, not publish.
+      // Not capturing these arg since these hit the asset bucket
       (mockAmazonS3
         .getObjectMetadata(_: String, _: String))
-        .expects(where { (b: String, _: String) =>
-          b == assetBucket
+        .expects(where { (bucket: String, _: String) =>
+          bucket == assetBucket
         })
-        .repeat(3)
-        .onCall { _ =>
-          val response = new ObjectMetadata()
-          response.setContentLength(201)
-          response
+        .anyNumberOfTimes()
+        .returning(new ObjectMetadata())
+
+      // mockS3Client uses v2 of aws sdk
+      // Not capturing these arg since these hit the source bucket
+      (mockS3Client
+        .getObjectAttributes(_: GetObjectAttributesRequest))
+        .expects(where { (req: GetObjectAttributesRequest) =>
+          req.bucket() == sourceBucket
+        })
+        .anyNumberOfTimes()
+        .onCall { _: GetObjectAttributesRequest =>
+          GetObjectAttributesResponse.builder().build()
         }
 
-      Publish.publishAssets(publishContainer).await should be a right
+      (mockS3Client
+        .copyObject(_: CopyObjectRequest))
+        .expects(capture(copyObjectV2Capture))
+        .anyNumberOfTimes()
+        .onCall { _: CopyObjectRequest =>
+          CopyObjectResponse
+            .builder()
+            .versionId(generateRandomString())
+            .copyObjectResult(
+              CopyObjectResult
+                .builder()
+                .checksumSHA256(generateRandomString())
+                .eTag(generateRandomString())
+                .build()
+            )
+            .build()
+        }
+
+      val publishAssetsResult = Publish.publishAssets(publishContainer).await
+      //println(publishAssetsResult)
+      publishAssetsResult should be a right
+
+      forAll(getObjectCapture.values.filter(_.getBucketName == publishBucket)) {
+        _.isRequesterPays should be(true)
+      }
 
       forAll(
-        copyObjectCapture.values
-          .filter(_.getDestinationBucketName == publishBucket)
-      ) { _.isRequesterPays should be(true) }
+        copyObjectV2Capture.values
+          .filter(_.destinationBucket() == publishBucket)
+      ) {
+        _.requestPayer() should be(RequestPayer.REQUESTER)
+      }
 
-      forAll(putObjectCapture.values.filter(_.getBucketName == publishBucket)) {
+      forAll(putObjectV1Capture.values.filter(_.getBucketName == publishBucket)) {
+        _.isRequesterPays should be(true)
+      }
+
+      forAll(
+        copyObjectV1Capture.values
+          .filter(_.getDestinationBucketName == publishBucket)
+      ) {
         _.isRequesterPays should be(true)
       }
 
@@ -383,20 +479,20 @@ class TestPublishS3Requests
           .withContentType(MediaType.APPLICATION_XML)
           .withBody(
             """<?xml version="1.0" encoding="UTF-8"?>
-                              |<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-                              |    <Name>bucket</Name>
-                              |    <Prefix/>
-                              |    <KeyCount>205</KeyCount>
-                              |    <MaxKeys>1000</MaxKeys>
-                              |    <IsTruncated>false</IsTruncated>
-                              |    <Contents>
-                              |        <Key>my-image.jpg</Key>
-                              |        <LastModified>2009-10-12T17:50:30.000Z</LastModified>
-                              |        <ETag>"fba9dede5f27731c9771645a39863328"</ETag>
-                              |        <Size>434234</Size>
-                              |        <StorageClass>STANDARD</StorageClass>
-                              |    </Contents>
-                              |</ListBucketResult>""".stripMargin
+              |<ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+              |    <Name>bucket</Name>
+              |    <Prefix/>
+              |    <KeyCount>205</KeyCount>
+              |    <MaxKeys>1000</MaxKeys>
+              |    <IsTruncated>false</IsTruncated>
+              |    <Contents>
+              |        <Key>my-image.jpg</Key>
+              |        <LastModified>2009-10-12T17:50:30.000Z</LastModified>
+              |        <ETag>"fba9dede5f27731c9771645a39863328"</ETag>
+              |        <Size>434234</Size>
+              |        <StorageClass>STANDARD</StorageClass>
+              |    </Contents>
+              |</ListBucketResult>""".stripMargin
           )
       )
     Vector(requestMatcher)
@@ -436,14 +532,12 @@ class TestPublishS3Requests
             response
               .withStatusCode(200)
               .withContentType(MediaType.APPLICATION_XML)
-              .withBody(
-                s"""<?xml version="1.0" encoding="UTF-8"?>
-                               |            <InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-                               |              <Bucket>$publishBucket</Bucket>
-                               |              <Key>${fileInfo.targetKey}</Key>
-                               |              <UploadId>${fileInfo.uploadId}</UploadId>
-                               |            </InitiateMultipartUploadResult>""".stripMargin
-              )
+              .withBody(s"""<?xml version="1.0" encoding="UTF-8"?>
+                   |            <InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+                   |              <Bucket>$publishBucket</Bucket>
+                   |              <Key>${fileInfo.targetKey}</Key>
+                   |              <UploadId>${fileInfo.uploadId}</UploadId>
+                   |            </InitiateMultipartUploadResult>""".stripMargin)
           )
 
         requestMatcher
@@ -465,14 +559,15 @@ class TestPublishS3Requests
             response
               .withStatusCode(200)
               .withBody(s"""<CopyPartResult>
-                          |   <LastModified>2011-04-11T20:34:56.000Z</LastModified>
-                          |   <ETag>"${generateRandomString()}"</ETag>
-                          |</CopyPartResult>""".stripMargin)
+                   |   <LastModified>2011-04-11T20:34:56.000Z</LastModified>
+                   |   <ETag>"${generateRandomString()}"</ETag>
+                   |</CopyPartResult>""".stripMargin)
           )
 
         requestMatcher
 
       }
+
   private def akkaCompleteMultipartExpectation(): Vector[HttpRequest] =
     for (fileInfo <- datasetFileInfos)
       yield {
@@ -516,7 +611,7 @@ class TestPublishS3Requests
       new DatasetFileInfo("key/file2.dcm", 2222, packageName = Some("pkg2")),
       new DatasetFileInfo("key/file3.dcm", 3333, packageName = Some("pkg2"))
     )
-// Add files to the dataset
+    // Add files to the dataset
     val pkg1 = createPackageInDb(
       databaseContainer,
       testUser,
