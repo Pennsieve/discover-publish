@@ -1492,8 +1492,6 @@ class TestPublish
           )._1
         ).value
 
-      println(publishAssetResult)
-
       publishAssetResult.packageManifests should have length 1
       val pkg1Manifest = publishAssetResult.packageManifests.head.manifest
 
@@ -1612,8 +1610,6 @@ class TestPublish
             publishContainer.s3Key + Publish.PUBLISH_ASSETS_FILENAME
           )._1
         ).value
-
-      println(publishAssetResult)
 
       publishAssetResult.packageManifests should have length 1
       val pkg1Manifest = publishAssetResult.packageManifests.head.manifest
