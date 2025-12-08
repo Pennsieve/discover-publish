@@ -71,7 +71,10 @@ data "aws_iam_policy_document" "discover_publish_s3_read_access_iam_policy_docum
       data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*"
+      "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*",
+
+      data.terraform_remote_state.platform_infrastructure.outputs.awsod_edots_publish50_bucket_arn,
+      "${data.terraform_remote_state.platform_infrastructure.outputs.awsod_edots_publish50_bucket_arn}/*",
     ]
   }
 }
@@ -137,7 +140,10 @@ data "aws_iam_policy_document" "discover_publish_s3_write_access_iam_policy_docu
       data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*"
+      "${data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn}/*",
+
+      data.terraform_remote_state.platform_infrastructure.outputs.awsod_edots_publish50_bucket_arn,
+      "${data.terraform_remote_state.platform_infrastructure.outputs.awsod_edots_publish50_bucket_arn}/*",
     ]
   }
 }
