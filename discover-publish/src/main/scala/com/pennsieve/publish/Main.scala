@@ -135,6 +135,8 @@ object Main extends App with StrictLogging {
 
       workflowId <- getEnv("WORKFLOW_ID").map(_.toLong)
 
+      expectPrevious <- getEnv("EXPECT_PREVIOUS").map(_.toBoolean)
+
       publishContainer = Await.result(
         PublishContainer.secureContainer(
           config = config,
@@ -158,7 +160,8 @@ object Main extends App with StrictLogging {
           contributors = contributors,
           collections = collections,
           externalPublications = externalPublications,
-          workflowId = workflowId
+          workflowId = workflowId,
+          expectPrevious = expectPrevious
         ),
         10 seconds
       )

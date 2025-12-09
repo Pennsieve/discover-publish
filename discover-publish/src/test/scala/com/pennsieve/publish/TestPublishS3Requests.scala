@@ -257,7 +257,8 @@ class TestPublishS3Requests
       collections = List(collection),
       externalPublications = List(externalPublication),
       datasetAssetClient = new S3DatasetAssetClient(testS3, assetBucket),
-      workflowId = PublishingWorkflows.Version5
+      workflowId = PublishingWorkflows.Version5,
+      expectPrevious = true
     )
 
     datasetFileInfos =

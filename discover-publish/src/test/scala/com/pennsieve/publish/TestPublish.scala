@@ -18,7 +18,7 @@ package com.pennsieve.publish
 
 import akka.stream.scaladsl.Keep
 import akka.stream.testkit.scaladsl.TestSink
-import akka.actor.{ scala2ActorRef, ActorSystem }
+import akka.actor.ActorSystem
 import akka.stream.scaladsl.{ Sink, Source }
 import cats.data.EitherT
 import cats.implicits._
@@ -33,10 +33,15 @@ import com.pennsieve.audit.middleware.TraceId
 import com.pennsieve.clients.{ DatasetAssetClient, S3DatasetAssetClient }
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.core.utilities._
-import com.pennsieve.domain.{ CoreError, ServiceError }
+import com.pennsieve.domain.{ CoreError, ServiceError, ThrowableError }
 import com.pennsieve.managers.StorageManager
 import com.pennsieve.models._
-import com.pennsieve.publish.models.{ CopyAction, DeleteAction, KeepAction }
+import com.pennsieve.publish.models.{
+  CopyAction,
+  DeleteAction,
+  KeepAction,
+  PublishAssetResult
+}
 import com.pennsieve.test._
 import com.pennsieve.test.helpers._
 import org.scalatest.EitherValues._
@@ -48,7 +53,6 @@ import io.circe.parser.decode
 import io.circe.syntax._
 
 import java.time.LocalDate
-import org.apache.commons.io.IOUtils
 import org.scalatest.{ Assertion, BeforeAndAfterAll, BeforeAndAfterEach, Suite }
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
@@ -64,9 +68,9 @@ import scala.jdk.CollectionConverters._
 import scala.collection.mutable
 import scala.concurrent.{ ExecutionContext, Future }
 import scala.util.Try
-import java.io.InputStream
-import java.nio.charset.StandardCharsets
 import java.util.UUID
+import io.circe.parser.decode
+import org.scalatest.Inside.inside
 
 case class InsecureDatabaseContainer(config: Config, organization: Organization)
     extends Container
@@ -212,7 +216,8 @@ class TestPublish
         collections = List(collection),
         externalPublications = List(externalPublication),
         datasetAssetClient = datasetAssetClient,
-        workflowId = PublishingWorkflows.Version5
+        workflowId = PublishingWorkflows.Version5,
+        expectPrevious = true
       )
     }
 
@@ -240,7 +245,8 @@ class TestPublish
         collections = List(collection),
         externalPublications = List(externalPublication),
         datasetAssetClient = datasetAssetClient,
-        workflowId = PublishingWorkflows.Version5
+        workflowId = PublishingWorkflows.Version5,
+        expectPrevious = true
       )
     }
 
@@ -1224,8 +1230,8 @@ class TestPublish
 
     "create metadata, package objects and public assets in S3 with ignored files (publish bucket)" in {
 
-      // set version to 1 so that publishAssets does not expect an existing manifest
-      val freshPublishContainer = publishContainer.copy(version = 1)
+      // set expectPrevious to false so that publishAssets does not expect an existing manifest
+      val freshPublishContainer = publishContainer.copy(expectPrevious = false)
 
       // Package with a single file
       val pkg1 = createPackage(testUser, name = "pkg1")
@@ -1355,8 +1361,8 @@ class TestPublish
     }
 
     "not publish deleted packages and files" in {
-      // Override version to 1, so that we don't expect an existing manifest.
-      val freshPublishContainer = publishContainer.copy(version = 1)
+      // Override expectPrevious to false, so that we don't expect an existing manifest.
+      val freshPublishContainer = publishContainer.copy(expectPrevious = false)
 
       // create package tree:
       //
@@ -1448,6 +1454,259 @@ class TestPublish
         s.getKey.contains(sub2DataFileName)
       } shouldBe false
     }
+  }
+
+  "publishAssets" should {
+    "succeed when expectPrevious is false" in {
+
+      publishContainer =
+        publishContainer.copy(version = 2, expectPrevious = false)
+
+      // everything under `testKey` should be gone:
+      assert(
+        !s3FilesExistUnderKey(publishContainer.s3Bucket, publishContainer.s3Key)
+      )
+
+      val pkg1 = createPackage(
+        testUser,
+        dataset = publishContainer.dataset,
+        name = "pkg1"
+      )
+      val (pkg1File, _) = createFileV2(
+        pkg1,
+        name = "file1",
+        s3Key = "key/file.txt",
+        content = "data data",
+        size = 1234
+      )
+
+      val publishAssetsResponse =
+        Publish.publishAssets(publishContainer).await
+      publishAssetsResponse.isRight shouldBe true
+
+      val publishAssetResult =
+        decode[PublishAssetResult](
+          downloadContentAndObject(
+            publishContainer.s3Bucket,
+            publishContainer.s3Key + Publish.PUBLISH_ASSETS_FILENAME
+          )._1
+        ).value
+
+      publishAssetResult.packageManifests should have length 1
+      val pkg1Manifest = publishAssetResult.packageManifests.head.manifest
+
+      pkg1Manifest.name shouldBe pkg1File.name
+      pkg1Manifest.sourcePackageId.get shouldBe pkg1.nodeId
+      pkg1Manifest.id.get shouldBe pkg1File.uuid
+
+      publishAssetResult.externalIdToPackagePath(ExternalId.nodeId(pkg1.nodeId)) shouldBe pkg1Manifest.path
+      publishAssetResult.externalIdToPackagePath(ExternalId.intId(pkg1.id)) shouldBe pkg1Manifest.path
+
+      val (pubPkg1, pubPkg1Obj) = downloadContentAndObject(
+        publishContainer.s3Bucket,
+        utils.joinKeys(publishContainer.s3Key, pkg1Manifest.path)
+      )
+      pubPkg1 shouldBe "data data"
+      pkg1Manifest.s3VersionId.get shouldBe pubPkg1Obj.versionId()
+      pkg1Manifest.sha256.get shouldBe pubPkg1Obj.checksumSHA256()
+
+      val (pubBanner, pubBannerObj) = downloadContentAndObject(
+        publishContainer.s3Bucket,
+        utils.joinKeys(
+          publishContainer.s3Key,
+          publishAssetResult.bannerManifest.manifest.path
+        )
+      )
+      pubBanner shouldBe "banner-data"
+      publishAssetResult.bannerManifest.manifest.s3VersionId.get shouldBe pubBannerObj
+        .versionId()
+
+      val (pubReadme, pubReadmeObj) = downloadContentAndObject(
+        publishContainer.s3Bucket,
+        utils.joinKeys(
+          publishContainer.s3Key,
+          publishAssetResult.readmeManifest.manifest.path
+        )
+      )
+      pubReadme shouldBe "readme-data"
+      publishAssetResult.readmeManifest.manifest.s3VersionId.get shouldBe pubReadmeObj
+        .versionId()
+
+      val (pubChangelog, pubChangelogObj) = downloadContentAndObject(
+        publishContainer.s3Bucket,
+        utils.joinKeys(
+          publishContainer.s3Key,
+          publishAssetResult.changelogManifest.manifest.path
+        )
+      )
+      pubChangelog shouldBe "changelog-data"
+      publishAssetResult.changelogManifest.manifest.s3VersionId.get shouldBe pubChangelogObj
+        .versionId()
+
+      // should write assets to public asset bucket
+      downloadContentAndObject(
+        publishContainer.s3AssetBucket,
+        utils.joinKeys("dataset-assets/", publishAssetResult.bannerKey)
+      )._1 shouldBe "banner-data"
+
+      downloadContentAndObject(
+        publishContainer.s3AssetBucket,
+        utils.joinKeys("dataset-assets/", publishAssetResult.readmeKey)
+      )._1 shouldBe "readme-data"
+
+      downloadContentAndObject(
+        publishContainer.s3AssetBucket,
+        utils.joinKeys("dataset-assets/", publishAssetResult.changelogKey)
+      )._1 shouldBe "changelog-data"
+    }
+
+    "succeed when expectPrevious is true" in {
+
+      publishContainer =
+        publishContainer.copy(version = 2, expectPrevious = true)
+
+      // seed the publish bucket with existing files and the expected manifest:
+      // both of these files should be deleted since we are not making packages
+      // for them.
+      val existingFile1 = uploadPublishedPackage(
+        publishContainer,
+        "delete-file.txt",
+        "delete-prefix-key/delete-file.txt"
+      )
+      val existingFile2 = uploadPublishedPackage(
+        publishContainer,
+        "another-file.txt",
+        "some-other-prefix/sub-key/another-file.txt"
+      )
+      val existingManifest = newManifest(
+        version = publishContainer.version - 1,
+        files = List(existingFile1, existingFile2)
+      )
+
+      setupManifestIfRequired(publishContainer, Some(existingManifest))
+
+      val pkg1 = createPackage(
+        testUser,
+        dataset = publishContainer.dataset,
+        name = "pkg1"
+      )
+      val (pkg1File, _) = createFileV2(
+        pkg1,
+        name = "file1",
+        s3Key = "key/file.txt",
+        content = "data data",
+        size = 1234
+      )
+
+      // publish
+      val publishAssetsResponse =
+        Publish.publishAssets(publishContainer).await
+      publishAssetsResponse.isRight shouldBe true
+
+      val publishAssetResult =
+        decode[PublishAssetResult](
+          downloadContentAndObject(
+            publishContainer.s3Bucket,
+            publishContainer.s3Key + Publish.PUBLISH_ASSETS_FILENAME
+          )._1
+        ).value
+
+      publishAssetResult.packageManifests should have length 1
+      val pkg1Manifest = publishAssetResult.packageManifests.head.manifest
+
+      pkg1Manifest.name shouldBe pkg1File.name
+      pkg1Manifest.sourcePackageId.get shouldBe pkg1.nodeId
+      pkg1Manifest.id.get shouldBe pkg1File.uuid
+
+      publishAssetResult.externalIdToPackagePath(ExternalId.nodeId(pkg1.nodeId)) shouldBe pkg1Manifest.path
+      publishAssetResult.externalIdToPackagePath(ExternalId.intId(pkg1.id)) shouldBe pkg1Manifest.path
+
+      val (pubPkg1, pubPkg1Obj) = downloadContentAndObject(
+        publishContainer.s3Bucket,
+        utils.joinKeys(publishContainer.s3Key, pkg1Manifest.path)
+      )
+      pubPkg1 shouldBe "data data"
+      pkg1Manifest.s3VersionId.get shouldBe pubPkg1Obj.versionId()
+      pkg1Manifest.sha256.get shouldBe pubPkg1Obj.checksumSHA256()
+
+      val (pubBanner, pubBannerObj) = downloadContentAndObject(
+        publishContainer.s3Bucket,
+        utils.joinKeys(
+          publishContainer.s3Key,
+          publishAssetResult.bannerManifest.manifest.path
+        )
+      )
+      pubBanner shouldBe "banner-data"
+      publishAssetResult.bannerManifest.manifest.s3VersionId.get shouldBe pubBannerObj
+        .versionId()
+
+      val (pubReadme, pubReadmeObj) = downloadContentAndObject(
+        publishContainer.s3Bucket,
+        utils.joinKeys(
+          publishContainer.s3Key,
+          publishAssetResult.readmeManifest.manifest.path
+        )
+      )
+      pubReadme shouldBe "readme-data"
+      publishAssetResult.readmeManifest.manifest.s3VersionId.get shouldBe pubReadmeObj
+        .versionId()
+
+      val (pubChangelog, pubChangelogObj) = downloadContentAndObject(
+        publishContainer.s3Bucket,
+        utils.joinKeys(
+          publishContainer.s3Key,
+          publishAssetResult.changelogManifest.manifest.path
+        )
+      )
+      pubChangelog shouldBe "changelog-data"
+      publishAssetResult.changelogManifest.manifest.s3VersionId.get shouldBe pubChangelogObj
+        .versionId()
+
+      // should write assets to public asset bucket
+      downloadContentAndObject(
+        publishContainer.s3AssetBucket,
+        utils.joinKeys("dataset-assets/", publishAssetResult.bannerKey)
+      )._1 shouldBe "banner-data"
+
+      downloadContentAndObject(
+        publishContainer.s3AssetBucket,
+        utils.joinKeys("dataset-assets/", publishAssetResult.readmeKey)
+      )._1 shouldBe "readme-data"
+
+      downloadContentAndObject(
+        publishContainer.s3AssetBucket,
+        utils.joinKeys("dataset-assets/", publishAssetResult.changelogKey)
+      )._1 shouldBe "changelog-data"
+
+      // old files should be gone
+      s3FilesExistUnderKey(
+        publishContainer.s3Bucket,
+        utils.joinKeys(publishContainer.s3Key, existingFile1.path),
+        matchExact = true
+      ) shouldBe false
+
+      s3FilesExistUnderKey(
+        publishContainer.s3Bucket,
+        utils.joinKeys(publishContainer.s3Key, existingFile2.path),
+        matchExact = true
+      ) shouldBe false
+    }
+
+    "fail when expectPrevious is true but no manifest exists" in {
+
+      publishContainer =
+        publishContainer.copy(version = 2, expectPrevious = true)
+
+      // publish
+      val publishAssetsResponse =
+        Publish.publishAssets(publishContainer).await
+      inside(publishAssetsResponse) {
+        case Left(ThrowableError(e)) =>
+          utils.isNoSuchKeyError(e) should be
+          true
+      }
+    }
+
   }
 
   "publish source" should {
@@ -2900,7 +3159,8 @@ class TestPublish
     publishContainer: PublishContainer,
     manifest: Option[DatasetMetadataV5_0] = None
   ): Unit = {
-    if (publishContainer.version > 1) {
+    if (publishContainer.expectPrevious) {
+      publishContainer.version should be > 1
       uploadManifest(
         publishContainer.s3Bucket,
         publishContainer.s3Key,

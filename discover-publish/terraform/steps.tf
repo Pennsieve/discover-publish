@@ -21,7 +21,8 @@ locals {
     { Name = "COLLECTIONS",           "Value.$" = "$.collections" },
     { Name = "EXTERNAL_PUBLICATIONS", "Value.$" = "$.external_publications" },
     { Name = "VERSION",               "Value.$" = "$.version" },
-    { Name = "WORKFLOW_ID",           "Value.$" = "$.workflow_id" }
+    { Name = "WORKFLOW_ID",           "Value.$" = "$.workflow_id" },
+    { Name = "EXPECT_PREVIOUS",       "Value.$" = "$.expect_previous" }
   ])
 
   step_function_variables = {

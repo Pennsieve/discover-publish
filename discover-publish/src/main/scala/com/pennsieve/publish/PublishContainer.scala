@@ -52,27 +52,50 @@ case class InsecureDBContainer(config: Config, organization: Organization)
 
 trait PublishContainerConfig {
   def s3: S3
+
   def s3Client: S3Client
+
   def s3Bucket: String
+
   def s3AssetBucket: String
+
   def s3Key: String
+
   def s3AssetKeyPrefix: String
+
   def s3CopyChunkSize: Int
+
   def s3CopyChunkParallelism: Int
+
   def s3CopyFileParallelism: Int
+
   def doi: String
+
   def dataset: Dataset
+
   def publishedDatasetId: Int
+
   def version: Int
+
   def organization: Organization
+
   def user: User
+
   def userOrcid: String
+
   def datasetRole: Option[Role]
+
   def contributors: List[PublishedContributor]
+
   def collections: List[PublishedCollection]
+
   def externalPublications: List[PublishedExternalPublication]
+
   def datasetAssetClient: DatasetAssetClient
+
   def workflowId: Long
+
+  def expectPrevious: Boolean
 }
 
 case class PublishContainer(
@@ -98,7 +121,8 @@ case class PublishContainer(
   collections: List[PublishedCollection],
   externalPublications: List[PublishedExternalPublication],
   datasetAssetClient: DatasetAssetClient,
-  workflowId: Long
+  workflowId: Long,
+  expectPrevious: Boolean
 ) extends Container
     with PublishContainerConfig
     with OrganizationContainer
@@ -142,7 +166,8 @@ object PublishContainer {
     contributors: String,
     collections: String,
     externalPublications: String,
-    workflowId: Long
+    workflowId: Long,
+    expectPrevious: Boolean
   )(implicit
     executionContext: ExecutionContext
   ): Future[PublishContainer] = {
@@ -214,7 +239,8 @@ object PublishContainer {
         collections = publishedCollections,
         externalPublications = publishedExternalPublications,
         datasetAssetClient = datasetAssetClient,
-        workflowId = workflowId
+        workflowId = workflowId,
+        expectPrevious = expectPrevious
       )
   }
 }
