@@ -4,7 +4,8 @@ Global / cancelable := true
 ThisBuild / resolvers ++= Seq(
   "Pennsieve Releases" at "https://nexus.pennsieve.cc/repository/maven-releases",
   "Pennsieve Snapshots" at "https://nexus.pennsieve.cc/repository/maven-snapshots",
-) ++ Resolver.sonatypeOssRepos("snapshots")
+  Resolver.sonatypeCentralSnapshots,
+)
 
 ThisBuild / credentials += Credentials(
   "Sonatype Nexus Repository Manager",
@@ -90,7 +91,7 @@ lazy val slickPgVersion = "0.20.3"
 
 lazy val slickCatsVersion = "0.10.4"
 
-lazy val testContainersVersion = "0.40.1"
+lazy val testContainersVersion = "0.44.1"
 lazy val utilitiesVersion = "4-55953e4"
 lazy val jobSchedulingServiceClientVersion = "6-3251c91"
 lazy val serviceUtilitiesVersion = "9-b838dd9"
@@ -108,40 +109,41 @@ lazy val unwantedDependencies = Seq(
 )
 
 import sbtassembly.MergeStrategy
+
 lazy val defaultMergeStrategy = settingKey[String => MergeStrategy](
   "Default mapping from archive member path to merge strategy. Used by all subprojects that build fat JARS"
 )
 
 ThisBuild / defaultMergeStrategy := {
-  case PathList("META-INF", _ @_*) => MergeStrategy.discard
-  case PathList("PropertyList-1.0.dtd", _ @_*) => MergeStrategy.last
-  case PathList("codegen-resources", "customization.config", _ @_*) =>
+  case PathList("META-INF", _@_*) => MergeStrategy.discard
+  case PathList("PropertyList-1.0.dtd", _@_*) => MergeStrategy.last
+  case PathList("codegen-resources", "customization.config", _@_*) =>
     MergeStrategy.discard
-  case PathList("codegen-resources", "examples-1.json", _ @_*) =>
+  case PathList("codegen-resources", "examples-1.json", _@_*) =>
     MergeStrategy.discard
-  case PathList("codegen-resources", "paginators-1.json", _ @_*) =>
+  case PathList("codegen-resources", "paginators-1.json", _@_*) =>
     MergeStrategy.discard
-  case PathList("codegen-resources", "service-2.json", _ @_*) =>
+  case PathList("codegen-resources", "service-2.json", _@_*) =>
     MergeStrategy.discard
-  case PathList("codegen-resources", "waiters-2.json", _ @_*) =>
+  case PathList("codegen-resources", "waiters-2.json", _@_*) =>
     MergeStrategy.discard
-  case PathList("com", "google", "common", _ @_*) => MergeStrategy.first
-  case PathList("com", "sun", _ @_*) => MergeStrategy.last
+  case PathList("com", "google", "common", _@_*) => MergeStrategy.first
+  case PathList("com", "sun", _@_*) => MergeStrategy.last
   case PathList("common-version-info.properties") => MergeStrategy.last
-  case PathList("contribs", "mx", _ @_*) => MergeStrategy.last
+  case PathList("contribs", "mx", _@_*) => MergeStrategy.last
   case PathList("core-default.xml") => MergeStrategy.last
   case PathList("digesterRules.xml") => MergeStrategy.last
-  case PathList("groovy", _ @_*) => MergeStrategy.first
-  case PathList("groovyjarjarcommonscli", _ @_*) => MergeStrategy.first
-  case PathList("javax", _ @_*) => MergeStrategy.last
-  case PathList("logback", _ @_*) => MergeStrategy.filterDistinctLines
-  case PathList("logback.xml", _ @_*) => MergeStrategy.first
+  case PathList("groovy", _@_*) => MergeStrategy.first
+  case PathList("groovyjarjarcommonscli", _@_*) => MergeStrategy.first
+  case PathList("javax", _@_*) => MergeStrategy.last
+  case PathList("logback", _@_*) => MergeStrategy.filterDistinctLines
+  case PathList("logback.xml", _@_*) => MergeStrategy.first
   case PathList("mime.types") => MergeStrategy.last
   case PathList("module-info.class") => MergeStrategy.discard
-  case PathList("org", "apache", _ @_*) => MergeStrategy.last
-  case PathList("org", "codehaus", _ @_*) => MergeStrategy.first
-  case PathList("overview.html", _ @_*) => MergeStrategy.last
-  case PathList("properties.dtd", _ @_*) => MergeStrategy.last
+  case PathList("org", "apache", _@_*) => MergeStrategy.last
+  case PathList("org", "codehaus", _@_*) => MergeStrategy.first
+  case PathList("overview.html", _@_*) => MergeStrategy.last
+  case PathList("properties.dtd", _@_*) => MergeStrategy.last
   case x => MergeStrategy.defaultMergeStrategy(x)
 }
 
