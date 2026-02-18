@@ -59,7 +59,7 @@ lazy val swaggerAkkaHttpVersion = "1.5.2"
 
 lazy val auditMiddlewareVersion = "1.0.3"
 lazy val authMiddlewareVersion = "5.1.3"
-lazy val coreVersion = "381-f4d57b4"
+lazy val coreVersion = "403-78e5c1b"
 
 lazy val awsVersion = "1.11.931"
 lazy val awsV2Version = "2.25.19"
