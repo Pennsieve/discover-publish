@@ -18,7 +18,17 @@ package com.pennsieve.publish
 
 import akka.actor.ActorSystem
 import com.pennsieve.aws.s3.S3
-import com.pennsieve.models.{ Dataset, Organization, Role, User }
+import com.pennsieve.models.PackageState.READY
+import com.pennsieve.models.PackageType.Text
+import com.pennsieve.models.{
+  Dataset,
+  ExternalId,
+  FileManifest,
+  NodeCodes,
+  Organization,
+  Role,
+  User
+}
 import com.pennsieve.test.PersistantTestContainers
 import com.pennsieve.test.helpers.TestDatabase
 import com.typesafe.config.{ Config, ConfigFactory }
@@ -155,35 +165,137 @@ class TestPackagesExport
       publishContainer =
         publishContainer.copy(version = 2, expectPrevious = true)
 
-      // seed the publish bucket with existing files and the expected manifest:
-      val originalFoo =
+      val fooName = "foo.txt"
+      val fooPath = s"files/$fooName"
+      val fooKey = utils.joinKeys(publishContainer.s3Key, fooPath)
+
+      val barName = "bar.txt"
+      val barPath = s"files/$barName"
+      val barKey = utils.joinKeys(publishContainer.s3Key, barPath)
+
+      val pkgANodeId = NodeCodes.generateId(NodeCodes.packageCode)
+      val pkgAContent = "I am Package A"
+
+      val pkgBNodeId = NodeCodes.generateId(NodeCodes.packageCode)
+      val pkgBContent = "And I am Package B"
+
+      // seed the publish bucket with version 1 files and the expected manifest:
+      val v1PkgA =
         uploadPublishedPackage(
-          publishContainer.s3Bucket,
-          publishContainer.s3Key,
-          "foo.txt",
-          "foo.txt"
+          s3Bucket = publishContainer.s3Bucket,
+          publishS3Prefix = publishContainer.s3Key,
+          name = fooName,
+          path = fooPath,
+          sourcePackageId = pkgANodeId,
+          content = pkgAContent
         )
-      val originalBar =
+
+      println("created v1 Package A", v1PkgA)
+
+      val v1PkgB =
         uploadPublishedPackage(
-          publishContainer.s3Bucket,
-          publishContainer.s3Key,
-          "bar.txt",
-          "bar.txt"
+          s3Bucket = publishContainer.s3Bucket,
+          publishS3Prefix = publishContainer.s3Key,
+          name = barName,
+          path = barPath,
+          sourcePackageId = pkgBNodeId,
+          content = pkgBContent
         )
-      val existingManifest = newManifest(
+
+      println("created v1 Package B", v1PkgB)
+
+      val v1Manifest = newManifest(
         version = publishContainer.version - 1,
-        files = List(originalFoo, originalBar)
+        files = List(v1PkgA, v1PkgB)
       )
 
       uploadManifest(
         publishContainer.s3Bucket,
         publishContainer.s3Key,
-        existingManifest
+        v1Manifest
       )
 
-      val idMap, fileManifests = PackagesExport
-        .exportPackageSources5x(publishContainer, existingManifest.files)
+      // set up pennsieve DB with current packages that will become v2
+      // the user has renamed Package A to bar and Pacakge B to foo.
+      // Now package A is named bar
+      val v2PkgA = createPackageInDb(
+        databaseContainer = databaseContainer,
+        user = testUser,
+        name = barName,
+        nodeId = pkgANodeId,
+        dataset = testDataset
+      )
+
+      // renaming the package does not touch the s3 key in the file table, so
+      // the file is still pointing at foo.
+      val v2PkgAFile = createPublishedFile(
+        fileManager = publishContainer.fileManager,
+        pkg = v2PkgA,
+        name = barName,
+        s3Key = fooKey,
+        size = pkgAContent.length
+      )
+
+      // and package B is named foo
+      val v2PkgB = createPackageInDb(
+        databaseContainer = databaseContainer,
+        user = testUser,
+        name = fooName,
+        nodeId = pkgBNodeId,
+        dataset = testDataset
+      )
+
+      val v2PkgBFile = createPublishedFile(
+        fileManager = publishContainer.fileManager,
+        pkg = v2PkgB,
+        name = fooName,
+        s3Key = barKey,
+        size = pkgBContent.length
+      )
+
+      val (idMap, fileManifests) = PackagesExport
+        .exportPackageSources5x(publishContainer, v1Manifest.files)
         .await
+
+      // now package A is named bar and B is named foo
+      idMap should contain theSameElementsAs List(
+        ExternalId.nodeId(pkgANodeId) -> barPath,
+        ExternalId.intId(v2PkgA.id) -> barPath,
+        ExternalId.nodeId(pkgBNodeId) -> fooPath,
+        ExternalId.intId(v2PkgB.id) -> fooPath
+      )
+
+      val (v2FooContent, v2FooObject) =
+        downloadContentAndObject(publishContainer.s3Bucket, fooKey)
+      val (v2BarContent, v2BarObject) =
+        downloadContentAndObject(publishContainer.s3Bucket, barKey)
+
+      v2FooContent shouldBe pkgBContent
+      v2BarContent shouldBe pkgAContent
+
+      fileManifests should contain theSameElementsAs List(
+        FileManifest(
+          name = barName,
+          path = barPath,
+          size = pkgAContent.length,
+          fileType = v2PkgAFile.fileType,
+          sourcePackageId = Some(pkgANodeId),
+          id = Some(v2PkgAFile.uuid),
+          s3VersionId = Some(v2BarObject.versionId()),
+          sha256 = Some(v2BarObject.checksumSHA256())
+        ),
+        FileManifest(
+          name = fooName,
+          path = fooPath,
+          size = pkgBContent.length,
+          fileType = v2PkgBFile.fileType,
+          sourcePackageId = Some(pkgBNodeId),
+          id = Some(v2PkgBFile.uuid),
+          s3VersionId = Some(v2FooObject.versionId()),
+          sha256 = Some(v2FooObject.checksumSHA256())
+        )
+      )
+
     }
   }
 }

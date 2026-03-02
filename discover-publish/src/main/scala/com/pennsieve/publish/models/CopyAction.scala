@@ -45,8 +45,9 @@ case class CopyAction(
   baseKey: String, // folder on S3 into which the file will be copied
   fileKey: String, // path to file
   packageKey: String, // path to folder or file (see above)
-  s3VersionId: Option[String] = None,
-  sha256: Option[String] = None
+  s3VersionId: Option[String] = None, // version id of an already published file that will be copied over by this action. Needed for cleanup if publish failed.
+  sha256: Option[String] = None,
+  sourceS3VersionId: Option[String] = None // if the source and target bucket are the same we need to provide the version id of the object being copied.
 ) extends FileAction {
   def copyToKey: String = joinKeys(baseKey, fileKey)
 }

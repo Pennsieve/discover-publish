@@ -20,12 +20,15 @@ import org.scalatest.{ Assertion, Assertions, EitherValues }
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.{
   BucketVersioningStatus,
+  ChecksumMode,
   Delete,
   DeleteBucketRequest,
   DeleteMarkerEntry,
   DeleteObjectRequest,
   DeleteObjectsRequest,
   GetBucketVersioningRequest,
+  GetObjectRequest,
+  GetObjectResponse,
   ListObjectVersionsRequest,
   ListObjectsV2Request,
   ObjectIdentifier,
@@ -36,7 +39,6 @@ import software.amazon.awssdk.services.s3.model.{
   S3Object,
   VersioningConfiguration
 }
-
 import cats.implicits._
 import com.pennsieve.models.{
   DatasetMetadataV5_0,
@@ -290,6 +292,34 @@ trait S3Helper extends EitherValues with Assertions {
       putResult.isRight,
       s"error uploading manifest to $s3Bucket $s3Key: ${putResult.left}"
     )
+  }
+
+  /**
+    * Read file contents from S3 as a string.
+    */
+  def downloadFile(s3Bucket: String, s3Key: String): String =
+    downloadContentAndObject(s3Bucket, s3Key)._1
+
+  def downloadContentAndObject(
+    s3Bucket: String,
+    s3Key: String
+  ): (String, GetObjectResponse) = {
+
+    val responseInputStream = s3Client.getObject(
+      GetObjectRequest
+        .builder()
+        .bucket(s3Bucket)
+        .key(s3Key)
+        .checksumMode(ChecksumMode.ENABLED)
+        .build()
+    )
+    try {
+      val content =
+        scala.io.Source.fromInputStream(responseInputStream, "UTF-8").mkString
+      (content, responseInputStream.response())
+    } finally {
+      responseInputStream.close()
+    }
   }
 
 }

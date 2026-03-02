@@ -2852,34 +2852,6 @@ class TestPublish
   }
 
   /**
-    * Read file contents from S3 as a string.
-    */
-  def downloadFile(s3Bucket: String, s3Key: String): String =
-    downloadContentAndObject(s3Bucket, s3Key)._1
-
-  def downloadContentAndObject(
-    s3Bucket: String,
-    s3Key: String
-  ): (String, GetObjectResponse) = {
-
-    val responseInputStream = s3Client.getObject(
-      GetObjectRequest
-        .builder()
-        .bucket(s3Bucket)
-        .key(s3Key)
-        .checksumMode(ChecksumMode.ENABLED)
-        .build()
-    )
-    try {
-      val content =
-        scala.io.Source.fromInputStream(responseInputStream, "UTF-8").mkString
-      (content, responseInputStream.response())
-    } finally {
-      responseInputStream.close()
-    }
-  }
-
-  /**
     * Mock run `metadata-publish` publishing just one metadata model schema
     */
   def runMetadataPublish(s3Bucket: String, s3Key: String): Unit = {

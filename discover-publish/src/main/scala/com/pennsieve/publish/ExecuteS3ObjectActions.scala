@@ -87,6 +87,7 @@ object ExecuteS3ObjectActions extends LazyLogging {
       CopyRequest(
         sourceBucket = copyAction.file.s3Bucket,
         sourceKey = copyAction.file.s3Key,
+        sourceS3VersionId = copyAction.sourceS3VersionId,
         destinationBucket = copyAction.toBucket,
         destinationKey = copyAction.copyToKey
       )
@@ -146,8 +147,12 @@ object ExecuteS3ObjectActions extends LazyLogging {
     Future.successful(keepAction)
   }
 
-  def fromUrl(action: CopyAction): String =
-    s"s3://${action.file.s3Bucket}/${action.file.s3Key}"
+  def fromUrl(action: CopyAction): String = {
+    val base = s"s3://${action.file.s3Bucket}/${action.file.s3Key}"
+    action.sourceS3VersionId.fold(base)(
+      sourceVersionId => s"$base?versionId=$sourceVersionId"
+    )
+  }
 
   def toUrl(action: CopyAction): String =
     s"s3://${action.toBucket}/${action.copyToKey}"

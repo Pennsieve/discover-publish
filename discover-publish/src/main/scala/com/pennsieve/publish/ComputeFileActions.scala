@@ -88,7 +88,7 @@ object ComputeFileActions extends LazyLogging {
           action
       }
 
-    val fileActions: Iterable[FileAction] = currentPathManifest.map {
+    val fileActionsFirstPass: Iterable[FileAction] = currentPathManifest.map {
       case (currentPath, currentManifest) =>
         logger.debug(
           s"computeFileActions() currentPath: ${currentPath} currentManifest: ${currentManifest}"
@@ -119,6 +119,22 @@ object ComputeFileActions extends LazyLogging {
         }
         logger.debug(s"computeFileActions() action: ${action}")
         action
+    }
+
+    // Now do a second pass looking for copies that have the same source and target bucket.
+    // We need to provide source S3 version ids on the source for these copies since the plain key
+    // might be hidden by a delete marker or other version by the time the copy happens.
+    val previousKeyManifest = previousFiles
+      .groupBy(f => utils.joinKeys(container.s3Key, f.path))
+      .map(f => f._1 -> f._2.head)
+
+    val fileActions = fileActionsFirstPass.map {
+      case c: CopyAction if c.file.s3Bucket == container.s3Bucket =>
+        previousKeyManifest.get(c.file.s3Key).flatMap(_.s3VersionId) match {
+          case Some(vid) => c.copy(sourceS3VersionId = Some(vid))
+          case None => c
+        }
+      case other => other
     }
 
     (deleteActions ++ fileActions).toList

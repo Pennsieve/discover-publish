@@ -43,12 +43,14 @@ object CopyOperation extends Enum[CopyOperation] with CirceEnum[CopyOperation] {
   val values: IndexedSeq[CopyOperation] = findValues
 
   case object SinglePartCopy extends CopyOperation
+
   case object MultipartCopy extends CopyOperation
 }
 
 case class CopyRequest(
   sourceBucket: String,
   sourceKey: String,
+  sourceS3VersionId: Option[String] = None,
   destinationBucket: String,
   destinationKey: String
 )
@@ -69,20 +71,26 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
 
   private val SinglePartCopyThreshold: Long = 5L * 1024L * 1024L * 1024L
 
-  private def getObjectSize(bucket: String, key: String): Long = {
-    val getObjectAttributesRequest = GetObjectAttributesRequest
+  private def getObjectSize(
+    bucket: String,
+    key: String,
+    s3VersionId: Option[String]
+  ): Long = {
+    val getObjectAttributesRequestBuilder = GetObjectAttributesRequest
       .builder()
       .bucket(bucket)
       .key(key)
       .objectAttributes(List(ObjectAttributes.OBJECT_SIZE).asJava)
       .requestPayer(RequestPayer.REQUESTER)
-      .build()
-    val getObjectAttributesResponse = {
-      s3Client.getObjectAttributes(getObjectAttributesRequest)
-    }
+
+    s3VersionId.foreach(getObjectAttributesRequestBuilder.versionId)
+
+    val getObjectAttributesResponse =
+      s3Client.getObjectAttributes(getObjectAttributesRequestBuilder.build())
+
     val objectSize = getObjectAttributesResponse.objectSize()
     logger.debug(
-      s"MultipartUploader.getObjectSize() bucket: ${bucket} key: ${key} objectSize: ${objectSize}"
+      s"MultipartUploader.getObjectSize() bucket: ${bucket} key: ${key} versionId ${s3VersionId} objectSize: ${objectSize}"
     )
     objectSize
   }
@@ -124,6 +132,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
   private def copyPart(
     sourceBucket: String,
     sourceKey: String,
+    sourceS3VersionId: Option[String],
     destinationBucket: String,
     destinationKey: String,
     uploadId: String,
@@ -133,7 +142,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     logger.debug(
       s"MultipartUploader.copyPart() uploadId: ${uploadId} index: ${index} part: ${part}"
     )
-    val uploadPartCopyRequest = UploadPartCopyRequest
+    val uploadPartCopyRequestBuilder = UploadPartCopyRequest
       .builder()
       .uploadId(uploadId)
       .sourceBucket(sourceBucket)
@@ -143,10 +152,11 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       .copySourceRange(part)
       .partNumber(index)
       .requestPayer(RequestPayer.REQUESTER)
-      .build()
+
+    sourceS3VersionId.foreach(uploadPartCopyRequestBuilder.sourceVersionId)
 
     val uploadPartCopyResponse =
-      s3Client.uploadPartCopy(uploadPartCopyRequest)
+      s3Client.uploadPartCopy(uploadPartCopyRequestBuilder.build())
     val copyPartResult = uploadPartCopyResponse.copyPartResult()
 
     val completedPart = CompletedPart
@@ -205,6 +215,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
           copyPart(
             request.sourceBucket,
             request.sourceKey,
+            request.sourceS3VersionId,
             request.destinationBucket,
             request.destinationKey,
             uploadId,
@@ -236,10 +247,10 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     ec: ExecutionContext
   ): Future[CompletedRequest] = Future {
     logger.debug(
-      s"MultipartUploader.singlePartCopy() ${request.sourceBucket}/${request.sourceKey} -> ${request.destinationBucket}/${request.destinationKey}"
+      s"MultipartUploader.singlePartCopy() ${request.sourceBucket}/${request.sourceKey}, versionId ${request.sourceS3VersionId} -> ${request.destinationBucket}/${request.destinationKey}"
     )
 
-    val copyObjectRequest = CopyObjectRequest
+    val copyObjectRequestBuilder = CopyObjectRequest
       .builder()
       .sourceBucket(request.sourceBucket)
       .sourceKey(request.sourceKey)
@@ -247,9 +258,12 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       .destinationKey(request.destinationKey)
       .checksumAlgorithm(ChecksumAlgorithm.SHA256)
       .requestPayer(RequestPayer.REQUESTER)
-      .build()
 
-    val copyObjectResponse = s3Client.copyObject(copyObjectRequest)
+    // add a source versionId if present
+    request.sourceS3VersionId.foreach(copyObjectRequestBuilder.sourceVersionId)
+
+    val copyObjectResponse =
+      s3Client.copyObject(copyObjectRequestBuilder.build())
     val copyObjectResult = copyObjectResponse.copyObjectResult()
 
     CompletedRequest(
@@ -278,7 +292,11 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
 
     val startTime = System.nanoTime()
     val objectSize =
-      getObjectSize(request.sourceBucket, request.sourceKey)
+      getObjectSize(
+        request.sourceBucket,
+        request.sourceKey,
+        request.sourceS3VersionId
+      )
 
     val completedRequestF = copyOperation(objectSize) match {
       case CopyOperation.SinglePartCopy => singlePartCopy(request)

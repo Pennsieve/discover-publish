@@ -465,6 +465,50 @@ trait ValueHelper extends Matchers {
     (file, uploadResponse)
   }
 
+  /**
+    * Creates a file for the given package that is marked as published. In tests the file
+    * should point to an object in the publish bucket.
+    */
+  def createPublishedFile(
+    fileManager: FileManager,
+    pkg: Package,
+    name: String = generateRandomString(),
+    s3Bucket: String = publishBucket,
+    s3Key: String,
+    fileType: FileType = FileType.Text,
+    objectType: FileObjectType = FileObjectType.Source,
+    processingState: FileProcessingState = FileProcessingState.Processed,
+    size: Long = 0,
+    uploadedState: Option[FileState] = None
+  )(implicit
+    executionContext: ExecutionContext
+  ): File = {
+    val file = fileManager
+      .create(
+        name,
+        fileType,
+        pkg,
+        s3Bucket,
+        s3Key,
+        objectType,
+        processingState,
+        size,
+        uploadedState = uploadedState
+      )
+      .await match {
+      case Right(x) => x
+      case Left(e) => throw e
+    }
+
+    Either.catchNonFatal(
+      fileManager
+        .setPublished(`package` = pkg, published = true, s3Key = Some(s3Key))
+        .await
+    )
+
+    file
+  }
+
   def publicAssetKeyPrefix(publishContainer: PublishContainer): String =
     publishContainer.workflowId match {
       case PublishingWorkflows.Version4 => publishContainer.s3Key
