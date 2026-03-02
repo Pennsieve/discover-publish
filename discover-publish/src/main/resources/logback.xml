@@ -16,7 +16,6 @@
     </appender>
 
     <logger name="com.pennsieve" level="DEBUG" />
-    <logger name="com.pennsieve.publish.MultipartUploader" level="DEBUG" />
 
     <root level="INFO">
         <appender-ref ref="Console" />
