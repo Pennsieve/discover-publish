@@ -124,12 +124,15 @@ object ComputeFileActions extends LazyLogging {
     // Now do a second pass looking for copies that have the same source and target bucket.
     // We need to provide source S3 version ids on the source for these copies since the plain key
     // might be hidden by a delete marker or other version by the time the copy happens.
+
+    // map the previous FileManifests by S3 key rather than path. Assumes the S3 publish prefix from that
+    // previous publish was container.s3Key.
     val previousKeyManifest = previousFiles
       .groupBy(f => utils.joinKeys(container.s3Key, f.path))
       .map(f => f._1 -> f._2.head)
 
     val fileActions = fileActionsFirstPass.map {
-      case c: CopyAction if c.file.s3Bucket == container.s3Bucket =>
+      case c: CopyAction if c.file.s3Bucket == c.toBucket =>
         previousKeyManifest.get(c.file.s3Key).flatMap(_.s3VersionId) match {
           case Some(vid) => c.copy(sourceS3VersionId = Some(vid))
           case None => c
