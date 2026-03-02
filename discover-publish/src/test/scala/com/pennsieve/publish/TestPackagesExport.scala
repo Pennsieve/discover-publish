@@ -31,8 +31,8 @@ import com.pennsieve.models.{
 }
 import com.pennsieve.test.PersistantTestContainers
 import com.pennsieve.test.helpers.TestDatabase
-import com.typesafe.config.{Config, ConfigFactory}
-import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, Suite}
+import com.typesafe.config.{ Config, ConfigFactory }
+import org.scalatest.{ BeforeAndAfterAll, BeforeAndAfterEach, Suite }
 import org.scalatest.matchers.should.Matchers
 import org.scalatest.wordspec.AnyWordSpec
 import org.scalatest.OptionValues
@@ -41,7 +41,7 @@ import java.util.UUID
 import scala.concurrent.ExecutionContext
 
 class TestPackagesExport
-  extends AnyWordSpec
+    extends AnyWordSpec
     with Matchers
     with PersistantTestContainers
     with DiscoverPublishS3DockerContainer
@@ -192,8 +192,6 @@ class TestPackagesExport
           content = pkgAContent
         )
 
-      //println("created v1 Package A", v1PkgA)
-
       val v1PkgB =
         uploadPublishedPackage(
           s3Bucket = publishContainer.s3Bucket,
@@ -203,8 +201,6 @@ class TestPackagesExport
           sourcePackageId = pkgBNodeId,
           content = pkgBContent
         )
-
-      //println("created v1 Package B", v1PkgB)
 
       val v1Manifest = newManifest(
         version = publishContainer.version - 1,
@@ -234,6 +230,7 @@ class TestPackagesExport
         fileManager = publishContainer.fileManager,
         pkg = v2PkgA,
         name = barName,
+        s3Bucket = publishContainer.s3Bucket,
         s3Key = fooKey,
         size = pkgAContent.length
       )
@@ -251,6 +248,7 @@ class TestPackagesExport
         fileManager = publishContainer.fileManager,
         pkg = v2PkgB,
         name = fooName,
+        s3Bucket = publishContainer.s3Bucket,
         s3Key = barKey,
         size = pkgBContent.length
       )
@@ -330,8 +328,6 @@ class TestPackagesExport
           content = pkgAContent
         )
 
-      //println("created v1 Package A", v1PkgA)
-
       val v1Manifest = newManifest(
         version = publishContainer.version - 1,
         files = List(v1PkgA)
@@ -360,6 +356,7 @@ class TestPackagesExport
         fileManager = publishContainer.fileManager,
         pkg = v2PkgA,
         name = barName,
+        s3Bucket = publishContainer.s3Bucket,
         s3Key = fooKey,
         size = pkgAContent.length
       )
