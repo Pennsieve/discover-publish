@@ -475,6 +475,7 @@ trait ValueHelper extends Matchers {
     name: String = generateRandomString(),
     s3Bucket: String = publishBucket,
     s3Key: String,
+    publishedS3VersionId: String,
     fileType: FileType = FileType.Text,
     objectType: FileObjectType = FileObjectType.Source,
     processingState: FileProcessingState = FileProcessingState.Processed,
@@ -483,7 +484,7 @@ trait ValueHelper extends Matchers {
   )(implicit
     executionContext: ExecutionContext
   ): File = {
-    val file = fileManager
+    fileManager
       .create(
         name,
         fileType,
@@ -493,20 +494,14 @@ trait ValueHelper extends Matchers {
         objectType,
         processingState,
         size,
-        uploadedState = uploadedState
+        uploadedState = uploadedState,
+        publishedS3VersionId = Some(publishedS3VersionId)
       )
       .await match {
       case Right(x) => x
       case Left(e) => throw e
     }
 
-    Either.catchNonFatal(
-      fileManager
-        .setPublished(`package` = pkg, published = true, s3Key = Some(s3Key))
-        .await
-    )
-
-    file
   }
 
   def publicAssetKeyPrefix(publishContainer: PublishContainer): String =

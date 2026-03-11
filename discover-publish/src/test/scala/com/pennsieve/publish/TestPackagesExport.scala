@@ -224,7 +224,7 @@ class TestPackagesExport
         dataset = testDataset
       )
 
-      // renaming the package does not touch the s3 key in the file table, so
+      // renaming the package does not touch the s3 bucket, key, or versionId in the file table, so
       // the file is still pointing at foo.
       val v2PkgAFile = createPublishedFile(
         fileManager = publishContainer.fileManager,
@@ -232,6 +232,7 @@ class TestPackagesExport
         name = barName,
         s3Bucket = publishContainer.s3Bucket,
         s3Key = fooKey,
+        publishedS3VersionId = v1PkgA.s3VersionId.value,
         size = pkgAContent.length
       )
 
@@ -250,6 +251,7 @@ class TestPackagesExport
         name = fooName,
         s3Bucket = publishContainer.s3Bucket,
         s3Key = barKey,
+        publishedS3VersionId = v1PkgB.s3VersionId.value,
         size = pkgBContent.length
       )
 
@@ -358,6 +360,7 @@ class TestPackagesExport
         name = barName,
         s3Bucket = publishContainer.s3Bucket,
         s3Key = fooKey,
+        publishedS3VersionId = v1PkgA.s3VersionId.value,
         size = pkgAContent.length
       )
 
@@ -485,6 +488,7 @@ class TestPackagesExport
           name = v2Package.name,
           s3Bucket = publishContainer.s3Bucket,
           s3Key = utils.joinKeys(publishContainer.s3Key, v1FileManifest.path),
+          publishedS3VersionId = v1FileManifest.s3VersionId.value,
           size = v1FileManifest.size
         )
       } yield (v2Package, v2File)

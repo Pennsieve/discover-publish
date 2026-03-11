@@ -59,7 +59,7 @@ lazy val swaggerAkkaHttpVersion = "1.5.2"
 
 lazy val auditMiddlewareVersion = "1.0.3"
 lazy val authMiddlewareVersion = "5.1.3"
-lazy val coreVersion = "403-78e5c1b"
+lazy val coreVersion = "405-63940d4"
 
 lazy val awsVersion = "1.11.931"
 lazy val awsV2Version = "2.25.19"
@@ -108,40 +108,41 @@ lazy val unwantedDependencies = Seq(
 )
 
 import sbtassembly.MergeStrategy
+
 lazy val defaultMergeStrategy = settingKey[String => MergeStrategy](
   "Default mapping from archive member path to merge strategy. Used by all subprojects that build fat JARS"
 )
 
 ThisBuild / defaultMergeStrategy := {
-  case PathList("META-INF", _ @_*) => MergeStrategy.discard
-  case PathList("PropertyList-1.0.dtd", _ @_*) => MergeStrategy.last
-  case PathList("codegen-resources", "customization.config", _ @_*) =>
+  case PathList("META-INF", _@_*) => MergeStrategy.discard
+  case PathList("PropertyList-1.0.dtd", _@_*) => MergeStrategy.last
+  case PathList("codegen-resources", "customization.config", _@_*) =>
     MergeStrategy.discard
-  case PathList("codegen-resources", "examples-1.json", _ @_*) =>
+  case PathList("codegen-resources", "examples-1.json", _@_*) =>
     MergeStrategy.discard
-  case PathList("codegen-resources", "paginators-1.json", _ @_*) =>
+  case PathList("codegen-resources", "paginators-1.json", _@_*) =>
     MergeStrategy.discard
-  case PathList("codegen-resources", "service-2.json", _ @_*) =>
+  case PathList("codegen-resources", "service-2.json", _@_*) =>
     MergeStrategy.discard
-  case PathList("codegen-resources", "waiters-2.json", _ @_*) =>
+  case PathList("codegen-resources", "waiters-2.json", _@_*) =>
     MergeStrategy.discard
-  case PathList("com", "google", "common", _ @_*) => MergeStrategy.first
-  case PathList("com", "sun", _ @_*) => MergeStrategy.last
+  case PathList("com", "google", "common", _@_*) => MergeStrategy.first
+  case PathList("com", "sun", _@_*) => MergeStrategy.last
   case PathList("common-version-info.properties") => MergeStrategy.last
-  case PathList("contribs", "mx", _ @_*) => MergeStrategy.last
+  case PathList("contribs", "mx", _@_*) => MergeStrategy.last
   case PathList("core-default.xml") => MergeStrategy.last
   case PathList("digesterRules.xml") => MergeStrategy.last
-  case PathList("groovy", _ @_*) => MergeStrategy.first
-  case PathList("groovyjarjarcommonscli", _ @_*) => MergeStrategy.first
-  case PathList("javax", _ @_*) => MergeStrategy.last
-  case PathList("logback", _ @_*) => MergeStrategy.filterDistinctLines
-  case PathList("logback.xml", _ @_*) => MergeStrategy.first
+  case PathList("groovy", _@_*) => MergeStrategy.first
+  case PathList("groovyjarjarcommonscli", _@_*) => MergeStrategy.first
+  case PathList("javax", _@_*) => MergeStrategy.last
+  case PathList("logback", _@_*) => MergeStrategy.filterDistinctLines
+  case PathList("logback.xml", _@_*) => MergeStrategy.first
   case PathList("mime.types") => MergeStrategy.last
   case PathList("module-info.class") => MergeStrategy.discard
-  case PathList("org", "apache", _ @_*) => MergeStrategy.last
-  case PathList("org", "codehaus", _ @_*) => MergeStrategy.first
-  case PathList("overview.html", _ @_*) => MergeStrategy.last
-  case PathList("properties.dtd", _ @_*) => MergeStrategy.last
+  case PathList("org", "apache", _@_*) => MergeStrategy.last
+  case PathList("org", "codehaus", _@_*) => MergeStrategy.first
+  case PathList("overview.html", _@_*) => MergeStrategy.last
+  case PathList("properties.dtd", _@_*) => MergeStrategy.last
   case x => MergeStrategy.defaultMergeStrategy(x)
 }
 
