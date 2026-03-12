@@ -48,12 +48,15 @@ final class MockServerDockerContainerImpl
       waitStrategy = Some(
         new HttpWaitStrategy()
           .forPath(MockServerDockerContainer.healthCheckPath)
+          .withStartupTimeout(java.time.Duration.ofSeconds(120))
       )
     ) {
 
   def mappedPort(): Int = super.mappedPort(MockServerDockerContainer.port)
+
   val accessKey: String = MockServerDockerContainer.accessKey
   val secretKey: String = MockServerDockerContainer.secretKey
+
   def endpointUrl: String = s"http://${containerIpAddress}:${mappedPort()}"
 
   def apply(): GenericContainer = this

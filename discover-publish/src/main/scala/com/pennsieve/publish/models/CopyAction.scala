@@ -45,7 +45,7 @@ case class CopyAction(
   baseKey: String, // folder on S3 into which the file will be copied
   fileKey: String, // path to file
   packageKey: String, // path to folder or file (see above)
-  s3VersionId: Option[String] = None,
+  s3VersionId: Option[String] = None, // version id of an already published file that will be copied over by this action. Needed for cleanup if publish failed.
   sha256: Option[String] = None
 ) extends FileAction {
   def copyToKey: String = joinKeys(baseKey, fileKey)
@@ -80,7 +80,9 @@ object FileActionType
   val values: immutable.IndexedSeq[FileActionType] = findValues
 
   case object CopyFile extends FileActionType
+
   case object KeepFile extends FileActionType
+
   case object DeleteFile extends FileActionType
 }
 
