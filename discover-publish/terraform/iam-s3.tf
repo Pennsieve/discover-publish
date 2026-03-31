@@ -147,3 +147,8 @@ data "aws_iam_policy_document" "discover_publish_s3_write_access_iam_policy_docu
     ]
   }
 }
+
+resource "aws_iam_role_policy_attachment" "storage_bucket_read" {
+  role       = aws_iam_role.ecs_task_iam_role.name
+  policy_arn = data.terraform_remote_state.account_service.outputs.storage_read_policy_arn
+}
