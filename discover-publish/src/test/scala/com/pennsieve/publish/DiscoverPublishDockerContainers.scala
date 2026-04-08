@@ -64,7 +64,7 @@ object S3DockerContainer {
 
 final class S3DockerContainerImpl
     extends DockerContainer(
-      dockerImage = s"localstack/localstack:stable",
+      dockerImage = s"localstack/localstack:4.12.0",
       exposedPorts = Seq(S3DockerContainer.port),
       env = Map(
         "SERVICES" -> "s3",
