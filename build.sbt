@@ -61,8 +61,8 @@ lazy val auditMiddlewareVersion = "1.0.3"
 lazy val authMiddlewareVersion = "5.1.3"
 lazy val coreVersion = "405-63940d4"
 
-lazy val awsVersion = "1.11.931"
-lazy val awsV2Version = "2.25.19"
+lazy val awsVersion = "1.12.797"
+lazy val awsV2Version = "2.42.28"
 
 lazy val catsVersion = "2.6.1"
 
