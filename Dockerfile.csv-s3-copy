@@ -1,0 +1,22 @@
+FROM pennsieve/openjdk:8-alpine3.9
+
+# Install bash for entrypoint script
+USER root
+RUN apk add --no-cache bash
+USER pennsieve
+
+# Copy the assembly JAR
+ARG JAR_FILE=discover-publish/target/scala-2.13/discover-publish-assembly-*.jar
+COPY --chown=pennsieve:pennsieve ${JAR_FILE} /app/discover-publish.jar
+
+# Set working directory
+WORKDIR /app
+
+# Default to CSV S3 Copy main class
+ENV MAIN_CLASS=com.pennsieve.publish.CsvS3CopyMain
+
+# Java options for container environment
+ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+
+# Run the application with the specified main class
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -cp /app/discover-publish.jar $MAIN_CLASS"]

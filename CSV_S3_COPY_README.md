@@ -49,6 +49,64 @@ sbt compile
 sbt assembly  # Creates a fat JAR
 ```
 
+### Building Docker Image
+
+```bash
+# Build Docker image for CSV S3 Copy tool
+./scripts/build-csv-s3-copy-image.sh
+
+# Build and push to ECR
+export ECR_REGISTRY=<your-account-id>.dkr.ecr.us-east-1.amazonaws.com
+export AWS_REGION=us-east-1
+./scripts/build-csv-s3-copy-image.sh push latest
+```
+
+## Deployment Options
+
+### Local / Development
+
+Run directly with sbt (see Running the Application below).
+
+### AWS ECS Fargate (Recommended for Production)
+
+The CSV S3 Copy tool is designed to run as an ECS Task on AWS Fargate, providing:
+- **Serverless execution**: No server management
+- **Scalability**: Run multiple tasks in parallel
+- **Cost-effective**: Pay only for execution time
+- **Integration**: Works with Step Functions, EventBridge, Lambda
+
+**Quick Start**: See [QUICK_START_ECS.md](QUICK_START_ECS.md) for a fast deployment guide.
+
+**Full Documentation**: See [ECS_FARGATE_DEPLOYMENT.md](ECS_FARGATE_DEPLOYMENT.md) for comprehensive deployment instructions including:
+- Building and pushing Docker images to ECR
+- Creating IAM roles with proper S3 permissions
+- Registering ECS task definitions
+- Running tasks via CLI, Console, or Step Functions
+- Monitoring with CloudWatch Logs
+- Cost optimization strategies
+- Troubleshooting common issues
+
+### Docker (Local or Any Container Platform)
+
+```bash
+# Run with local CSV file
+docker run \
+  -e CSV_FILE_PATH=/data/copy-requests.csv \
+  -e AWS_ACCESS_KEY_ID=<key> \
+  -e AWS_SECRET_ACCESS_KEY=<secret> \
+  -e AWS_REGION=us-east-1 \
+  -v /local/path:/data \
+  csv-s3-copy:latest
+
+# Run with S3 CSV file
+docker run \
+  -e CSV_FILE_PATH=s3://my-bucket/copy-requests.csv \
+  -e AWS_ACCESS_KEY_ID=<key> \
+  -e AWS_SECRET_ACCESS_KEY=<secret> \
+  -e AWS_REGION=us-east-1 \
+  csv-s3-copy:latest
+```
+
 ## Configuration
 
 The application supports configuration through both command-line arguments and environment variables. The priority order is:
