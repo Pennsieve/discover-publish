@@ -61,8 +61,60 @@ object CsvCopySettings {
   val MAX_WAIT_TIME: FiniteDuration = Duration(60, TimeUnit.MINUTES)
   val DEFAULT_PARALLELISM: Int = 1
 
+  // Environment variable names
+  object EnvVars {
+    val CSV_FILE_PATH = "CSV_FILE_PATH"
+    val AWS_REGION = "AWS_REGION"
+    val MAX_PART_SIZE = "MAX_PART_SIZE"
+    val MAX_WAIT_TIME = "MAX_WAIT_TIME"
+    val PARALLELISM = "PARALLELISM"
+  }
+
   def apply(): CsvCopySettings = new CsvCopySettings()
 
+  /**
+    * Load settings from environment variables
+    */
+  def fromEnvironment(): CsvCopySettings = {
+    val csvPath = sys.env.getOrElse(EnvVars.CSV_FILE_PATH, "")
+
+    val region = sys.env.get(EnvVars.AWS_REGION) match {
+      case Some(r) if r.nonEmpty => Region.of(r)
+      case _ => DEFAULT_REGION
+    }
+
+    val maxPartSize = sys.env.get(EnvVars.MAX_PART_SIZE) match {
+      case Some(size) if size.nonEmpty =>
+        Try(size.toLong).getOrElse(MAX_PART_SIZE)
+      case _ => MAX_PART_SIZE
+    }
+
+    val maxWaitTime = sys.env.get(EnvVars.MAX_WAIT_TIME) match {
+      case Some(time) if time.nonEmpty =>
+        Try(FiniteDuration(Duration(time).toSeconds, SECONDS))
+          .getOrElse(MAX_WAIT_TIME)
+      case _ => MAX_WAIT_TIME
+    }
+
+    val parallelism = sys.env.get(EnvVars.PARALLELISM) match {
+      case Some(p) if p.nonEmpty =>
+        Try(p.toInt).getOrElse(DEFAULT_PARALLELISM)
+      case _ => DEFAULT_PARALLELISM
+    }
+
+    CsvCopySettings(
+      csvFilePath = csvPath,
+      region = region,
+      maxPartSize = maxPartSize,
+      maxWaitTime = maxWaitTime,
+      parallelism = parallelism
+    )
+  }
+
+  /**
+    * Parse command line arguments and override settings
+    * Command line arguments take priority over existing settings
+    */
   def fromArgs(args: List[String], settings: CsvCopySettings): CsvCopySettings = {
     args match {
       case h :: t if t.nonEmpty =>
@@ -232,14 +284,31 @@ object CsvS3CopyMain extends LazyLogging {
     println("""
       |Usage: CsvS3CopyMain --csv <path-to-csv> [options]
       |
+      |Configuration Priority (highest to lowest):
+      |  1. Command line arguments
+      |  2. Environment variables
+      |  3. Default values
+      |
       |Required:
       |  --csv <path>          Path to CSV file with copy instructions
+      |                        (or set CSV_FILE_PATH environment variable)
       |
       |Optional:
       |  --region <region>     AWS region (default: us-east-1)
+      |                        (or set AWS_REGION environment variable)
       |  --maxPartSize <size>  Maximum part size in bytes (default: 50MB)
+      |                        (or set MAX_PART_SIZE environment variable)
       |  --maxWaitTime <time>  Maximum wait time (e.g., "60m", "1h") (default: 60m)
+      |                        (or set MAX_WAIT_TIME environment variable)
       |  --parallelism <n>     Number of parallel copy operations (default: 1)
+      |                        (or set PARALLELISM environment variable)
+      |
+      |Environment Variables:
+      |  CSV_FILE_PATH         Path to CSV file
+      |  AWS_REGION            AWS region (e.g., us-east-1, us-west-2)
+      |  MAX_PART_SIZE         Maximum part size in bytes
+      |  MAX_WAIT_TIME         Maximum wait time (e.g., "60m", "2h")
+      |  PARALLELISM           Number of parallel operations
       |
       |CSV Format:
       |  The CSV file must have a header row with the following columns:
@@ -253,21 +322,29 @@ object CsvS3CopyMain extends LazyLogging {
       |  source_bucket,source_key,source_version_id,destination_bucket,destination_key
       |  my-source-bucket,path/to/file1.txt,,my-dest-bucket,new/path/file1.txt
       |  my-source-bucket,path/to/file2.txt,abc123,my-dest-bucket,new/path/file2.txt
+      |
+      |Example with environment variables:
+      |  export CSV_FILE_PATH=/path/to/file.csv
+      |  export AWS_REGION=us-west-2
+      |  export PARALLELISM=3
+      |  sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
       |""".stripMargin)
   }
 
   def main(args: Array[String]): Unit = {
     logger.info("CsvS3CopyMain starting")
 
-    if (args.isEmpty || args.contains("--help") || args.contains("-h")) {
+    if (args.contains("--help") || args.contains("-h")) {
       printUsage()
       sys.exit(0)
     }
 
-    val settings = CsvCopySettings.fromArgs(args.toList, CsvCopySettings())
+    // Load settings: environment variables first, then override with command line args
+    val envSettings = CsvCopySettings.fromEnvironment()
+    val settings = CsvCopySettings.fromArgs(args.toList, envSettings)
 
     if (settings.csvFilePath.isEmpty) {
-      logger.error("CSV file path is required")
+      logger.error("CSV file path is required (use --csv or CSV_FILE_PATH environment variable)")
       printUsage()
       sys.exit(1)
     }

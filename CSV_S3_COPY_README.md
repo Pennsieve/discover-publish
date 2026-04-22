@@ -41,12 +41,31 @@ sbt compile
 sbt assembly  # Creates a fat JAR
 ```
 
+## Configuration
+
+The application supports configuration through both command-line arguments and environment variables. The priority order is:
+
+1. **Command-line arguments** (highest priority)
+2. **Environment variables**
+3. **Default values** (lowest priority)
+
+This allows you to set defaults via environment variables and override them with command-line arguments when needed.
+
 ## Running the Application
 
 ### Using sbt run
 
 ```bash
 sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv /path/to/your/file.csv"
+```
+
+### Using environment variables
+
+```bash
+export CSV_FILE_PATH=/path/to/your/file.csv
+export AWS_REGION=us-west-2
+export PARALLELISM=3
+sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
 ```
 
 ### Using the assembled JAR
@@ -57,27 +76,60 @@ java -cp target/scala-2.13/discover-publish-assembly-*.jar \
   --csv /path/to/your/file.csv
 ```
 
+### Mixing environment variables and command-line arguments
+
+```bash
+# Set defaults via environment variables
+export CSV_FILE_PATH=/path/to/default.csv
+export PARALLELISM=5
+
+# Override specific settings with command-line arguments
+sbt "runMain com.pennsieve.publish.CsvS3CopyMain --parallelism 10"
+# This will use /path/to/default.csv but with parallelism of 10
+```
+
 ## Command Line Options
 
 ### Required Options
 
 - `--csv <path>` - Path to the CSV file containing copy instructions
+  - Environment variable: `CSV_FILE_PATH`
 
 ### Optional Options
 
 - `--region <region>` - AWS region (default: `us-east-1`)
   - Example: `--region us-west-2`
+  - Environment variable: `AWS_REGION`
 
 - `--maxPartSize <bytes>` - Maximum part size for multi-part uploads in bytes (default: `52428800` = 50MB)
   - Example: `--maxPartSize 104857600` (100MB)
+  - Environment variable: `MAX_PART_SIZE`
 
 - `--maxWaitTime <duration>` - Maximum time to wait for all operations to complete (default: `60m`)
   - Examples: `--maxWaitTime 30m`, `--maxWaitTime 2h`
+  - Environment variable: `MAX_WAIT_TIME`
 
 - `--parallelism <number>` - Number of parallel copy operations to run (default: `1`)
   - Example: `--parallelism 5` (copies 5 files at a time)
+  - Environment variable: `PARALLELISM`
 
-## Complete Example
+## Environment Variables
+
+All configuration options can be set via environment variables:
+
+| Environment Variable | Description | Example |
+|---------------------|-------------|---------|
+| `CSV_FILE_PATH` | Path to CSV file with copy instructions | `/path/to/file.csv` |
+| `AWS_REGION` | AWS region | `us-west-2` |
+| `MAX_PART_SIZE` | Maximum part size in bytes | `104857600` (100MB) |
+| `MAX_WAIT_TIME` | Maximum wait time duration | `120m` or `2h` |
+| `PARALLELISM` | Number of parallel copy operations | `5` |
+
+**Note**: Command-line arguments always override environment variables.
+
+## Complete Examples
+
+### Using command-line arguments
 
 ```bash
 sbt "runMain com.pennsieve.publish.CsvS3CopyMain \
@@ -86,6 +138,31 @@ sbt "runMain com.pennsieve.publish.CsvS3CopyMain \
   --maxPartSize 52428800 \
   --parallelism 3 \
   --maxWaitTime 120m"
+```
+
+### Using environment variables
+
+```bash
+export CSV_FILE_PATH=example-copy-requests.csv
+export AWS_REGION=us-east-1
+export MAX_PART_SIZE=52428800
+export PARALLELISM=3
+export MAX_WAIT_TIME=120m
+
+sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
+```
+
+### Using Docker/container environments
+
+Environment variables are particularly useful in containerized environments:
+
+```bash
+docker run \
+  -e CSV_FILE_PATH=/data/copy-requests.csv \
+  -e AWS_REGION=us-west-2 \
+  -e PARALLELISM=5 \
+  -v /local/path:/data \
+  your-image
 ```
 
 ## AWS Credentials
@@ -134,9 +211,11 @@ The AWS credentials used must have the following permissions:
 - **Version Support**: Supports copying specific versions of S3 objects
 - **SHA256 Checksums**: Automatically calculates and stores SHA256 checksums
 - **Controlled Parallelism**: Control how many files are copied simultaneously
+- **Flexible Configuration**: Support for both command-line arguments and environment variables with priority override
 - **Comprehensive Logging**: Detailed logging of all operations
 - **Error Handling**: Continues processing even if some copies fail, provides summary at the end
 - **Request Payer Support**: Uses requester-pays mode for S3 operations
+- **Container-Friendly**: Easy to configure in Docker and Kubernetes environments via environment variables
 
 ## Error Handling
 
