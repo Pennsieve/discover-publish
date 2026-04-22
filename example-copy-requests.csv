@@ -1,0 +1,5 @@
+source_bucket,source_key,source_version_id,destination_bucket,destination_key
+my-source-bucket,path/to/file1.txt,,my-dest-bucket,new/path/file1.txt
+my-source-bucket,path/to/file2.txt,abc123xyz456,my-dest-bucket,new/path/file2.txt
+my-source-bucket,data/file3.dat,,my-dest-bucket,backup/file3.dat
+source-bucket-2,documents/doc.pdf,v1234567890,target-bucket,archive/doc.pdf
