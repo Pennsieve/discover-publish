@@ -1,10 +1,10 @@
-# Quick Start: Deploy CSV S3 Copy to ECS Fargate
+# Quick Start: Deploy S3 Copy Machine to ECS Fargate
 
-This is a quick reference for deploying the CSV S3 Copy tool to ECS Fargate.
+This is a quick reference for deploying the S3 Copy Machine to ECS Fargate.
 
 For detailed documentation, see [ECS_FARGATE_DEPLOYMENT.md](ECS_FARGATE_DEPLOYMENT.md).
 
-**💡 Tip**: Test locally first using `./run-s3-copy.sh --csv your-file.csv` before deploying to ECS. See [CSV_S3_COPY_README.md](CSV_S3_COPY_README.md) for local execution options.
+**💡 Tip**: Test locally first using `./run-s3-copy.sh --csv your-file.csv` before deploying to ECS. See [S3_COPY_MACHINE.md](S3_COPY_MACHINE.md) for local execution options.
 
 ## Prerequisites
 

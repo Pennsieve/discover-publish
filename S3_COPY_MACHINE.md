@@ -1,4 +1,4 @@
-# CSV S3 Copy Application
+# S3 Copy Machine
 
 A Scala application that reads S3 copy instructions from a CSV file and performs bulk S3 object copies using the MultipartUploader.
 
@@ -67,7 +67,7 @@ sbt assembly  # Creates a fat JAR
 ### Building Docker Image
 
 ```bash
-# Build Docker image for CSV S3 Copy tool
+# Build Docker image for S3 Copy Machine
 ./scripts/build-csv-s3-copy-image.sh
 
 # Build and push to Docker Hub as pennsieve/s3-copy-machine (recommended)
@@ -87,7 +87,7 @@ Run directly with sbt (see Running the Application below).
 
 ### AWS ECS Fargate (Recommended for Production)
 
-The CSV S3 Copy tool is designed to run as an ECS Task on AWS Fargate, providing:
+The S3 Copy Machine is designed to run as an ECS Task on AWS Fargate, providing:
 - **Serverless execution**: No server management
 - **Scalability**: Run multiple tasks in parallel
 - **Cost-effective**: Pay only for execution time

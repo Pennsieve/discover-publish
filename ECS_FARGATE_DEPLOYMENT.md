@@ -1,10 +1,10 @@
 # ECS Fargate Deployment Guide
 
-This guide explains how to deploy the CSV S3 Copy application as an ECS Task on AWS Fargate.
+This guide explains how to deploy the S3 Copy Machine as an ECS Task on AWS Fargate.
 
 ## Overview
 
-The CSV S3 Copy application can be run as an ECS Fargate task, allowing you to:
+The S3 Copy Machine can be run as an ECS Fargate task, allowing you to:
 - Execute bulk S3 copy operations in a serverless, containerized environment
 - Trigger copy operations from Step Functions, EventBridge, or manually
 - Scale automatically without managing servers
@@ -263,7 +263,7 @@ You can orchestrate the CSV S3 copy task from Step Functions:
 
 ```json
 {
-  "Comment": "Run CSV S3 Copy Task",
+  "Comment": "Run S3 Copy Machine Task",
   "StartAt": "RunCopyTask",
   "States": {
     "RunCopyTask": {
@@ -435,7 +435,7 @@ module "csv_s3_copy" {
 ### GitHub Actions Example
 
 ```yaml
-name: Deploy CSV S3 Copy
+name: Deploy S3 Copy Machine
 
 on:
   push:
@@ -474,11 +474,11 @@ jobs:
 
 ## Summary
 
-The CSV S3 Copy application is well-suited for ECS Fargate deployment:
+The S3 Copy Machine is well-suited for ECS Fargate deployment:
 - **Serverless**: No server management required
 - **Scalable**: Run multiple tasks in parallel for large workloads
 - **Cost-effective**: Pay only for execution time
 - **Integrated**: Works with Step Functions, EventBridge, Lambda
 - **Monitored**: CloudWatch Logs and ECS metrics built-in
 
-For questions or issues, refer to the main [CSV_S3_COPY_README.md](CSV_S3_COPY_README.md).
+For questions or issues, refer to the main [S3_COPY_MACHINE.md](S3_COPY_MACHINE.md).
