@@ -7,28 +7,62 @@ For detailed documentation, see [ECS_FARGATE_DEPLOYMENT.md](ECS_FARGATE_DEPLOYME
 ## Prerequisites
 
 ```bash
-# Set your AWS configuration
+# Set your AWS and Docker Hub configuration
 export AWS_REGION=us-east-1
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-export ECR_REGISTRY=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
+export DOCKER_HUB_USERNAME=your-docker-hub-username
 ```
 
 ## Step 1: Build and Push Docker Image
 
+### Option A: Docker Hub (Recommended)
+
 ```bash
-# Build the assembly and Docker image
-./scripts/build-csv-s3-copy-image.sh
+# Build and push to Docker Hub
+./scripts/build-csv-s3-copy-image.sh push latest
+
+# This will prompt for your Docker Hub password
+# The image will be: your-username/csv-s3-copy:latest
+```
+
+### Option B: ECR (Alternative)
+
+```bash
+# Set ECR configuration
+export ECR_REGISTRY=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
 # Create ECR repository
 aws ecr create-repository \
     --repository-name csv-s3-copy \
     --region $AWS_REGION
 
-# Push to ECR
-./scripts/build-csv-s3-copy-image.sh push latest
+# Build and push to ECR
+./scripts/build-csv-s3-copy-image.sh push-ecr latest
 ```
 
-## Step 2: Create IAM Roles
+## Step 2: Create IAM Roles and Docker Hub Credentials
+
+### Store Docker Hub Credentials (if using private repository)
+
+**Skip this if your Docker Hub image is public**
+
+```bash
+# Store Docker Hub credentials in AWS Secrets Manager
+aws secretsmanager create-secret \
+    --name docker-hub-credentials \
+    --secret-string '{
+      "username": "'$DOCKER_HUB_USERNAME'",
+      "password": "your-docker-hub-password-or-token"
+    }' \
+    --region $AWS_REGION
+
+# Note the ARN from output - you'll need it later
+export DOCKER_HUB_CREDENTIALS_ARN=$(aws secretsmanager describe-secret \
+    --secret-id docker-hub-credentials \
+    --query ARN --output text)
+```
+
+**Tip**: Use a Docker Hub access token instead of your password. Create one at: https://hub.docker.com/settings/security
 
 ### Task Execution Role
 
@@ -50,11 +84,38 @@ aws iam create-role \
     --role-name csv-s3-copy-execution-role \
     --assume-role-policy-document file:///tmp/ecs-trust-policy.json
 
-# Attach AWS managed policy
-aws iam attach-role-policy \
+# Create and attach policy for Docker Hub credentials and logs
+cat > /tmp/execution-role-policy.json <<EOF
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "$DOCKER_HUB_CREDENTIALS_ARN"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:CreateLogGroup"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+EOF
+
+aws iam put-role-policy \
     --role-name csv-s3-copy-execution-role \
-    --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+    --policy-name execution-policy \
+    --policy-document file:///tmp/execution-role-policy.json
 ```
+
+**For Public Images**: If using a public Docker Hub image, you can skip the Secrets Manager permission and remove the `repositoryCredentials` section from your task definition.
 
 ### Task Role
 
@@ -91,8 +152,10 @@ aws iam put-role-policy \
 
 ## Step 3: Register Task Definition
 
+### For Private Docker Hub Images
+
 ```bash
-# Update the task definition with your values
+# Create task definition with Docker Hub credentials
 cat > /tmp/task-definition.json <<EOF
 {
   "family": "csv-s3-copy",
@@ -104,7 +167,10 @@ cat > /tmp/task-definition.json <<EOF
   "taskRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-task-role",
   "containerDefinitions": [{
     "name": "csv-s3-copy",
-    "image": "$ECR_REGISTRY/csv-s3-copy:latest",
+    "image": "$DOCKER_HUB_USERNAME/csv-s3-copy:latest",
+    "repositoryCredentials": {
+      "credentialsParameter": "$DOCKER_HUB_CREDENTIALS_ARN"
+    },
     "essential": true,
     "environment": [
       {"name": "AWS_REGION", "value": "$AWS_REGION"}
@@ -123,6 +189,44 @@ cat > /tmp/task-definition.json <<EOF
 EOF
 
 # Register the task definition
+aws ecs register-task-definition \
+    --cli-input-json file:///tmp/task-definition.json
+```
+
+### For Public Docker Hub Images
+
+If your Docker Hub repository is public, you can omit the `repositoryCredentials`:
+
+```bash
+cat > /tmp/task-definition.json <<EOF
+{
+  "family": "csv-s3-copy",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-execution-role",
+  "taskRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-task-role",
+  "containerDefinitions": [{
+    "name": "csv-s3-copy",
+    "image": "$DOCKER_HUB_USERNAME/csv-s3-copy:latest",
+    "essential": true,
+    "environment": [
+      {"name": "AWS_REGION", "value": "$AWS_REGION"}
+    ],
+    "logConfiguration": {
+      "logDriver": "awslogs",
+      "options": {
+        "awslogs-group": "/ecs/csv-s3-copy",
+        "awslogs-region": "$AWS_REGION",
+        "awslogs-stream-prefix": "csv-s3-copy",
+        "awslogs-create-group": "true"
+      }
+    }
+  }]
+}
+EOF
+
 aws ecs register-task-definition \
     --cli-input-json file:///tmp/task-definition.json
 ```

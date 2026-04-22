@@ -55,10 +55,14 @@ sbt assembly  # Creates a fat JAR
 # Build Docker image for CSV S3 Copy tool
 ./scripts/build-csv-s3-copy-image.sh
 
-# Build and push to ECR
+# Build and push to Docker Hub (recommended)
+export DOCKER_HUB_USERNAME=your-username
+./scripts/build-csv-s3-copy-image.sh push latest
+
+# Or build and push to ECR (alternative)
 export ECR_REGISTRY=<your-account-id>.dkr.ecr.us-east-1.amazonaws.com
 export AWS_REGION=us-east-1
-./scripts/build-csv-s3-copy-image.sh push latest
+./scripts/build-csv-s3-copy-image.sh push-ecr latest
 ```
 
 ## Deployment Options

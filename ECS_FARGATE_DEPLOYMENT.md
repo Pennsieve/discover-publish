@@ -27,42 +27,68 @@ CSV File (S3 or Local) → ECS Fargate Task → S3 Copy Operations → Destinati
 
 ## Step 1: Build and Push Docker Image
 
-### Build the Docker Image
+### Build and Push to Docker Hub (Recommended)
 
 ```bash
-# Build the assembly JAR
-sbt assembly
+# Set your Docker Hub username
+export DOCKER_HUB_USERNAME=your-username
 
-# Build Docker image using sbt-docker plugin
-sbt docker
+# Build and push in one command
+./scripts/build-csv-s3-copy-image.sh push latest
 
-# Or manually build
-docker build -t csv-s3-copy:latest .
+# This will:
+# 1. Build the assembly JAR
+# 2. Build the Docker image
+# 3. Tag it as: your-username/csv-s3-copy:latest
+# 4. Prompt for Docker Hub login
+# 5. Push to Docker Hub
 ```
 
-### Tag and Push to ECR
+**Note**: For private Docker Hub repositories, you'll need to store your Docker Hub credentials in AWS Secrets Manager (see Step 2b below).
+
+### Alternative: Push to ECR
+
+If you prefer using AWS ECR instead:
 
 ```bash
-# Authenticate to ECR
-aws ecr get-login-password --region us-east-1 | \
-  docker login --username AWS --password-stdin <account-id>.dkr.ecr.us-east-1.amazonaws.com
+# Set ECR configuration
+export ECR_REGISTRY=<account-id>.dkr.ecr.us-east-1.amazonaws.com
+export AWS_REGION=us-east-1
 
 # Create ECR repository (if not exists)
-aws ecr create-repository --repository-name csv-s3-copy --region us-east-1
+aws ecr create-repository --repository-name csv-s3-copy --region $AWS_REGION
 
-# Tag image
-docker tag csv-s3-copy:latest \
-  <account-id>.dkr.ecr.us-east-1.amazonaws.com/csv-s3-copy:latest
-
-# Push to ECR
-docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/csv-s3-copy:latest
+# Build and push to ECR
+./scripts/build-csv-s3-copy-image.sh push-ecr latest
 ```
 
-## Step 2: Create IAM Roles
+## Step 2: Create IAM Roles and Docker Hub Credentials
 
-### Task Execution Role
+### Step 2a: Store Docker Hub Credentials (if using private repository)
 
-This role allows ECS to pull the Docker image and write logs.
+If your Docker Hub repository is private, store credentials in AWS Secrets Manager:
+
+```bash
+# Store Docker Hub credentials in Secrets Manager
+aws secretsmanager create-secret \
+  --name docker-hub-credentials \
+  --description "Docker Hub credentials for ECS" \
+  --secret-string '{
+    "username": "your-docker-hub-username",
+    "password": "your-docker-hub-password-or-token"
+  }' \
+  --region us-east-1
+
+# Note the ARN from the output - you'll need it for the task definition
+```
+
+**Security Best Practice**: Use a Docker Hub access token instead of your password. Create one at: https://hub.docker.com/settings/security
+
+**For Public Images**: If your image is public on Docker Hub, you can skip this step and remove the `repositoryCredentials` section from the task definition.
+
+### Step 2b: Task Execution Role
+
+This role allows ECS to pull the Docker image from Docker Hub and write logs.
 
 ```json
 {
@@ -71,10 +97,7 @@ This role allows ECS to pull the Docker image and write logs.
     {
       "Effect": "Allow",
       "Action": [
-        "ecr:GetAuthorizationToken",
-        "ecr:BatchCheckLayerAvailability",
-        "ecr:GetDownloadUrlForLayer",
-        "ecr:BatchGetImage",
+        "secretsmanager:GetSecretValue",
         "logs:CreateLogStream",
         "logs:PutLogEvents",
         "logs:CreateLogGroup"
@@ -85,7 +108,21 @@ This role allows ECS to pull the Docker image and write logs.
 }
 ```
 
-### Task Role
+**Note**: If using ECR instead of Docker Hub, replace the Secrets Manager permission with ECR permissions:
+```json
+{
+  "Effect": "Allow",
+  "Action": [
+    "ecr:GetAuthorizationToken",
+    "ecr:BatchCheckLayerAvailability",
+    "ecr:GetDownloadUrlForLayer",
+    "ecr:BatchGetImage"
+  ],
+  "Resource": "*"
+}
+```
+
+### Step 2c: Task Role
 
 This role allows the application to access S3 buckets.
 
@@ -135,20 +172,35 @@ aws ecs register-task-definition \
 The task definition template uses Terraform variables. Example usage:
 
 ```hcl
+# Docker Hub credentials secret (only needed for private repositories)
+resource "aws_secretsmanager_secret" "docker_hub_credentials" {
+  name        = "docker-hub-credentials"
+  description = "Docker Hub credentials for ECS"
+}
+
+resource "aws_secretsmanager_secret_version" "docker_hub_credentials" {
+  secret_id = aws_secretsmanager_secret.docker_hub_credentials.id
+  secret_string = jsonencode({
+    username = var.docker_hub_username
+    password = var.docker_hub_password
+  })
+}
+
 data "template_file" "csv_s3_copy_task_definition" {
   template = file("${path.module}/csv-s3-copy-task-definition.json")
 
   vars = {
-    csv_s3_copy_image_url       = "${aws_ecr_repository.csv_s3_copy.repository_url}"
-    image_tag                   = var.image_tag
-    execution_role_arn          = aws_iam_role.ecs_execution_role.arn
-    task_role_arn               = aws_iam_role.csv_s3_copy_task_role.arn
-    cloudwatch_log_group_name   = "/ecs/csv-s3-copy"
-    aws_region                  = var.aws_region
-    csv_file_path               = var.csv_file_path
-    parallelism                 = var.parallelism
-    max_part_size              = var.max_part_size
-    max_wait_time              = var.max_wait_time
+    docker_hub_username          = var.docker_hub_username
+    image_tag                    = var.image_tag
+    docker_hub_credentials_arn   = aws_secretsmanager_secret.docker_hub_credentials.arn
+    execution_role_arn           = aws_iam_role.ecs_execution_role.arn
+    task_role_arn                = aws_iam_role.csv_s3_copy_task_role.arn
+    cloudwatch_log_group_name    = "/ecs/csv-s3-copy"
+    aws_region                   = var.aws_region
+    csv_file_path                = var.csv_file_path
+    parallelism                  = var.parallelism
+    max_part_size                = var.max_part_size
+    max_wait_time                = var.max_wait_time
   }
 }
 
@@ -164,6 +216,8 @@ resource "aws_ecs_task_definition" "csv_s3_copy" {
   container_definitions = data.template_file.csv_s3_copy_task_definition.rendered
 }
 ```
+
+**For Public Docker Hub Images**: If your image is public, you can remove the `repositoryCredentials` section from the task definition JSON and skip creating the Docker Hub credentials secret.
 
 ## Step 4: Run the Task
 

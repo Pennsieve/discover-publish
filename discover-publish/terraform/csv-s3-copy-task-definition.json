@@ -9,7 +9,10 @@
   "containerDefinitions": [
     {
       "name": "csv-s3-copy",
-      "image": "${csv_s3_copy_image_url}:${image_tag}",
+      "image": "${docker_hub_username}/csv-s3-copy:${image_tag}",
+      "repositoryCredentials": {
+        "credentialsParameter": "${docker_hub_credentials_arn}"
+      },
       "essential": true,
       "environment": [
         { "name": "CSV_FILE_PATH", "value": "${csv_file_path}" },
