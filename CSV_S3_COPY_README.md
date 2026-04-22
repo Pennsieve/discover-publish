@@ -10,6 +10,21 @@ This application allows you to perform bulk S3 copy operations by providing a CS
 - Calculates SHA256 checksums
 - Supports versioned S3 objects
 
+## Quick Start
+
+```bash
+# Run locally with sbt
+./run-s3-copy.sh --csv example-copy-requests.csv
+
+# Run with Docker
+./run-s3-copy.sh --method docker --csv example-copy-requests.csv
+
+# Run with S3 CSV file and custom parallelism
+./run-s3-copy.sh --csv s3://my-bucket/copy-list.csv --parallelism 5
+```
+
+See the full [Running the Application](#running-the-application) section for more options.
+
 ## CSV File Location
 
 The application supports reading CSV files from:
@@ -122,28 +137,52 @@ This allows you to set defaults via environment variables and override them with
 
 ## Running the Application
 
-### Using sbt run with local file
+### Quick Start: Using the Convenience Script (Recommended)
+
+The easiest way to run the tool is using the provided `run-s3-copy.sh` script:
 
 ```bash
+# Run with sbt (local development)
+./run-s3-copy.sh --csv example-copy-requests.csv
+
+# Run with Docker
+./run-s3-copy.sh --method docker --csv s3://my-bucket/copy-list.csv
+
+# Run with options
+./run-s3-copy.sh --csv example.csv --parallelism 5 --region us-west-2
+
+# Use environment variables
+export CSV_FILE_PATH=s3://bucket/file.csv
+export PARALLELISM=10
+./run-s3-copy.sh
+
+# Get help
+./run-s3-copy.sh --help
+```
+
+**Features:**
+- Automatically handles sbt or Docker execution
+- Validates inputs and provides clear error messages
+- Mounts local CSV files when using Docker
+- Handles AWS credentials automatically
+- Colored output for better readability
+- Shows configuration before running
+
+### Using sbt run directly
+
+If you prefer to use sbt directly:
+
+```bash
+# With local file
 sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv /path/to/your/file.csv"
-```
 
-### Using sbt run with S3 URI
-
-```bash
+# With S3 URI
 sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv s3://my-bucket/path/to/file.csv"
-```
 
-### Using environment variables
-
-```bash
+# Using environment variables
 export CSV_FILE_PATH=/path/to/your/file.csv
 export AWS_REGION=us-west-2
 export PARALLELISM=3
-sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
-
-# Or with S3 URI
-export CSV_FILE_PATH=s3://my-bucket/path/to/file.csv
 sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
 ```
 

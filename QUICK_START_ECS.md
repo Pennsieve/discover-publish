@@ -4,6 +4,8 @@ This is a quick reference for deploying the CSV S3 Copy tool to ECS Fargate.
 
 For detailed documentation, see [ECS_FARGATE_DEPLOYMENT.md](ECS_FARGATE_DEPLOYMENT.md).
 
+**💡 Tip**: Test locally first using `./run-s3-copy.sh --csv your-file.csv` before deploying to ECS. See [CSV_S3_COPY_README.md](CSV_S3_COPY_README.md) for local execution options.
+
 ## Prerequisites
 
 ```bash
