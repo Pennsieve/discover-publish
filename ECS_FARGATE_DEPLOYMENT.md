@@ -30,16 +30,13 @@ CSV File (S3 or Local) → ECS Fargate Task → S3 Copy Operations → Destinati
 ### Build and Push to Docker Hub (Recommended)
 
 ```bash
-# Set your Docker Hub username
-export DOCKER_HUB_USERNAME=your-username
-
 # Build and push in one command
 ./scripts/build-csv-s3-copy-image.sh push latest
 
 # This will:
 # 1. Build the assembly JAR
 # 2. Build the Docker image
-# 3. Tag it as: your-username/csv-s3-copy:latest
+# 3. Tag it as: pennsieve/s3-copy-machine:latest
 # 4. Prompt for Docker Hub login
 # 5. Push to Docker Hub
 ```
@@ -56,7 +53,7 @@ export ECR_REGISTRY=<account-id>.dkr.ecr.us-east-1.amazonaws.com
 export AWS_REGION=us-east-1
 
 # Create ECR repository (if not exists)
-aws ecr create-repository --repository-name csv-s3-copy --region $AWS_REGION
+aws ecr create-repository --repository-name s3-copy-machine --region $AWS_REGION
 
 # Build and push to ECR
 ./scripts/build-csv-s3-copy-image.sh push-ecr latest
@@ -181,7 +178,7 @@ resource "aws_secretsmanager_secret" "docker_hub_credentials" {
 resource "aws_secretsmanager_secret_version" "docker_hub_credentials" {
   secret_id = aws_secretsmanager_secret.docker_hub_credentials.id
   secret_string = jsonencode({
-    username = var.docker_hub_username
+    username = "your-docker-hub-username"  # User with access to pennsieve organization
     password = var.docker_hub_password
   })
 }
@@ -190,7 +187,6 @@ data "template_file" "csv_s3_copy_task_definition" {
   template = file("${path.module}/csv-s3-copy-task-definition.json")
 
   vars = {
-    docker_hub_username          = var.docker_hub_username
     image_tag                    = var.image_tag
     docker_hub_credentials_arn   = aws_secretsmanager_secret.docker_hub_credentials.arn
     execution_role_arn           = aws_iam_role.ecs_execution_role.arn
@@ -417,7 +413,7 @@ module "csv_s3_copy" {
   cluster_name              = "production"
   vpc_id                    = aws_vpc.main.id
   private_subnet_ids        = aws_subnet.private[*].id
-  csv_s3_copy_image         = "123456789012.dkr.ecr.us-east-1.amazonaws.com/csv-s3-copy:latest"
+  csv_s3_copy_image         = "pennsieve/s3-copy-machine:latest"
   source_buckets            = ["source-bucket-1", "source-bucket-2"]
   destination_buckets       = ["destination-bucket-1"]
   csv_config_buckets        = ["config-bucket"]
@@ -467,8 +463,8 @@ jobs:
         run: |
           sbt assembly
           sbt docker
-          docker tag csv-s3-copy:latest ${{ secrets.ECR_REGISTRY }}/csv-s3-copy:${{ github.sha }}
-          docker push ${{ secrets.ECR_REGISTRY }}/csv-s3-copy:${{ github.sha }}
+          docker tag pennsieve/s3-copy-machine:latest ${{ secrets.ECR_REGISTRY }}/s3-copy-machine:${{ github.sha }}
+          docker push ${{ secrets.ECR_REGISTRY }}/s3-copy-machine:${{ github.sha }}
 
       - name: Update task definition
         run: |

@@ -9,7 +9,7 @@
   "containerDefinitions": [
     {
       "name": "csv-s3-copy",
-      "image": "${docker_hub_username}/csv-s3-copy:${image_tag}",
+      "image": "pennsieve/s3-copy-machine:${image_tag}",
       "repositoryCredentials": {
         "credentialsParameter": "${docker_hub_credentials_arn}"
       },

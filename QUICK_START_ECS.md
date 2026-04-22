@@ -7,10 +7,9 @@ For detailed documentation, see [ECS_FARGATE_DEPLOYMENT.md](ECS_FARGATE_DEPLOYME
 ## Prerequisites
 
 ```bash
-# Set your AWS and Docker Hub configuration
+# Set your AWS configuration
 export AWS_REGION=us-east-1
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-export DOCKER_HUB_USERNAME=your-docker-hub-username
 ```
 
 ## Step 1: Build and Push Docker Image
@@ -22,7 +21,7 @@ export DOCKER_HUB_USERNAME=your-docker-hub-username
 ./scripts/build-csv-s3-copy-image.sh push latest
 
 # This will prompt for your Docker Hub password
-# The image will be: your-username/csv-s3-copy:latest
+# The image will be: pennsieve/s3-copy-machine:latest
 ```
 
 ### Option B: ECR (Alternative)
@@ -33,7 +32,7 @@ export ECR_REGISTRY=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
 # Create ECR repository
 aws ecr create-repository \
-    --repository-name csv-s3-copy \
+    --repository-name s3-copy-machine \
     --region $AWS_REGION
 
 # Build and push to ECR
@@ -48,10 +47,11 @@ aws ecr create-repository \
 
 ```bash
 # Store Docker Hub credentials in AWS Secrets Manager
+# Use credentials for a user with access to the pennsieve organization
 aws secretsmanager create-secret \
     --name docker-hub-credentials \
     --secret-string '{
-      "username": "'$DOCKER_HUB_USERNAME'",
+      "username": "your-docker-hub-username",
       "password": "your-docker-hub-password-or-token"
     }' \
     --region $AWS_REGION
@@ -167,7 +167,7 @@ cat > /tmp/task-definition.json <<EOF
   "taskRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-task-role",
   "containerDefinitions": [{
     "name": "csv-s3-copy",
-    "image": "$DOCKER_HUB_USERNAME/csv-s3-copy:latest",
+    "image": "pennsieve/s3-copy-machine:latest",
     "repositoryCredentials": {
       "credentialsParameter": "$DOCKER_HUB_CREDENTIALS_ARN"
     },
@@ -209,7 +209,7 @@ cat > /tmp/task-definition.json <<EOF
   "taskRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-task-role",
   "containerDefinitions": [{
     "name": "csv-s3-copy",
-    "image": "$DOCKER_HUB_USERNAME/csv-s3-copy:latest",
+    "image": "pennsieve/s3-copy-machine:latest",
     "essential": true,
     "environment": [
       {"name": "AWS_REGION", "value": "$AWS_REGION"}

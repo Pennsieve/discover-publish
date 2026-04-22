@@ -15,7 +15,8 @@ cd "$PROJECT_ROOT"
 PUSH_IMAGE=false
 PUSH_TO_ECR=false
 IMAGE_TAG="${2:-latest}"
-IMAGE_NAME="csv-s3-copy"
+IMAGE_NAME="s3-copy-machine"
+DOCKER_HUB_ORG="pennsieve"
 
 # Parse arguments
 if [ "$1" == "push" ]; then
@@ -27,9 +28,9 @@ elif [ "$1" == "push-ecr" ]; then
 fi
 
 echo "==================================="
-echo "Building CSV S3 Copy Docker Image"
+echo "Building S3 Copy Machine Docker Image"
 echo "==================================="
-echo "Image: $IMAGE_NAME:$IMAGE_TAG"
+echo "Image: $DOCKER_HUB_ORG/$IMAGE_NAME:$IMAGE_TAG"
 echo "Push: $PUSH_IMAGE"
 if [ "$PUSH_IMAGE" == "true" ]; then
     if [ "$PUSH_TO_ECR" == "true" ]; then
@@ -57,7 +58,7 @@ echo ""
 echo "Step 2: Building Docker image..."
 docker build \
     -f Dockerfile.csv-s3-copy \
-    -t "$IMAGE_NAME:$IMAGE_TAG" \
+    -t "$DOCKER_HUB_ORG/$IMAGE_NAME:$IMAGE_TAG" \
     .
 
 echo "Docker image built successfully"
@@ -79,7 +80,7 @@ if [ "$PUSH_IMAGE" == "true" ]; then
         fi
 
         echo "Step 3: Tagging image for ECR..."
-        docker tag "$IMAGE_NAME:$IMAGE_TAG" "$ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
+        docker tag "$DOCKER_HUB_ORG/$IMAGE_NAME:$IMAGE_TAG" "$ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG"
         echo ""
 
         echo "Step 4: Logging in to ECR..."
@@ -97,21 +98,15 @@ if [ "$PUSH_IMAGE" == "true" ]; then
         echo "==================================="
     else
         # Push to Docker Hub
-        if [ -z "$DOCKER_HUB_USERNAME" ]; then
-            echo "ERROR: DOCKER_HUB_USERNAME environment variable not set"
-            echo "Example: export DOCKER_HUB_USERNAME=your-username"
-            exit 1
-        fi
+        DOCKER_HUB_IMAGE="$DOCKER_HUB_ORG/$IMAGE_NAME:$IMAGE_TAG"
 
-        DOCKER_HUB_IMAGE="$DOCKER_HUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG"
-
-        echo "Step 3: Tagging image for Docker Hub..."
-        docker tag "$IMAGE_NAME:$IMAGE_TAG" "$DOCKER_HUB_IMAGE"
+        echo "Step 3: Pushing to Docker Hub..."
+        echo "Image: $DOCKER_HUB_IMAGE"
         echo ""
 
         echo "Step 4: Logging in to Docker Hub..."
-        echo "Please enter your Docker Hub password/token:"
-        docker login --username "$DOCKER_HUB_USERNAME"
+        echo "Please log in to Docker Hub (organization: $DOCKER_HUB_ORG)"
+        docker login
         echo ""
 
         echo "Step 5: Pushing image to Docker Hub..."
@@ -129,10 +124,9 @@ if [ "$PUSH_IMAGE" == "true" ]; then
 else
     echo "==================================="
     echo "Build complete!"
-    echo "Image: $IMAGE_NAME:$IMAGE_TAG"
+    echo "Image: $DOCKER_HUB_ORG/$IMAGE_NAME:$IMAGE_TAG"
     echo ""
     echo "To push to Docker Hub, run:"
-    echo "  export DOCKER_HUB_USERNAME=<your-username>"
     echo "  ./scripts/build-csv-s3-copy-image.sh push $IMAGE_TAG"
     echo ""
     echo "To push to ECR, run:"

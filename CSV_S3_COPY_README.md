@@ -55,8 +55,7 @@ sbt assembly  # Creates a fat JAR
 # Build Docker image for CSV S3 Copy tool
 ./scripts/build-csv-s3-copy-image.sh
 
-# Build and push to Docker Hub (recommended)
-export DOCKER_HUB_USERNAME=your-username
+# Build and push to Docker Hub as pennsieve/s3-copy-machine (recommended)
 ./scripts/build-csv-s3-copy-image.sh push latest
 
 # Or build and push to ECR (alternative)
@@ -100,7 +99,7 @@ docker run \
   -e AWS_SECRET_ACCESS_KEY=<secret> \
   -e AWS_REGION=us-east-1 \
   -v /local/path:/data \
-  csv-s3-copy:latest
+  pennsieve/s3-copy-machine:latest
 
 # Run with S3 CSV file
 docker run \
@@ -108,7 +107,7 @@ docker run \
   -e AWS_ACCESS_KEY_ID=<key> \
   -e AWS_SECRET_ACCESS_KEY=<secret> \
   -e AWS_REGION=us-east-1 \
-  csv-s3-copy:latest
+  pennsieve/s3-copy-machine:latest
 ```
 
 ## Configuration
