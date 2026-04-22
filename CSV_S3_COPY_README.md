@@ -10,6 +10,14 @@ This application allows you to perform bulk S3 copy operations by providing a CS
 - Calculates SHA256 checksums
 - Supports versioned S3 objects
 
+## CSV File Location
+
+The application supports reading CSV files from:
+- **Local file system**: Use a file path (e.g., `/path/to/file.csv` or `./file.csv`)
+- **S3**: Use an S3 URI (e.g., `s3://my-bucket/path/to/file.csv`)
+
+When using an S3 URI, the application will automatically download the CSV file to a temporary location, process it, and clean up the temporary file afterward.
+
 ## CSV Format
 
 The CSV file must have a header row with the following columns:
@@ -53,10 +61,16 @@ This allows you to set defaults via environment variables and override them with
 
 ## Running the Application
 
-### Using sbt run
+### Using sbt run with local file
 
 ```bash
 sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv /path/to/your/file.csv"
+```
+
+### Using sbt run with S3 URI
+
+```bash
+sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv s3://my-bucket/path/to/file.csv"
 ```
 
 ### Using environment variables
@@ -65,6 +79,10 @@ sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv /path/to/your/file.csv"
 export CSV_FILE_PATH=/path/to/your/file.csv
 export AWS_REGION=us-west-2
 export PARALLELISM=3
+sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
+
+# Or with S3 URI
+export CSV_FILE_PATH=s3://my-bucket/path/to/file.csv
 sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
 ```
 
@@ -93,6 +111,7 @@ sbt "runMain com.pennsieve.publish.CsvS3CopyMain --parallelism 10"
 ### Required Options
 
 - `--csv <path>` - Path to the CSV file containing copy instructions
+  - Supports local file paths (e.g., `/path/to/file.csv`) and S3 URIs (e.g., `s3://bucket/key`)
   - Environment variable: `CSV_FILE_PATH`
 
 ### Optional Options
@@ -119,7 +138,7 @@ All configuration options can be set via environment variables:
 
 | Environment Variable | Description | Example |
 |---------------------|-------------|---------|
-| `CSV_FILE_PATH` | Path to CSV file with copy instructions | `/path/to/file.csv` |
+| `CSV_FILE_PATH` | Path to CSV file with copy instructions (local or S3 URI) | `/path/to/file.csv` or `s3://bucket/key` |
 | `AWS_REGION` | AWS region | `us-west-2` |
 | `MAX_PART_SIZE` | Maximum part size in bytes | `104857600` (100MB) |
 | `MAX_WAIT_TIME` | Maximum wait time duration | `120m` or `2h` |
@@ -152,16 +171,34 @@ export MAX_WAIT_TIME=120m
 sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
 ```
 
+### Using S3 URI for CSV file
+
+```bash
+# CSV file stored in S3
+sbt "runMain com.pennsieve.publish.CsvS3CopyMain \
+  --csv s3://my-config-bucket/copy-requests.csv \
+  --region us-east-1 \
+  --parallelism 3"
+```
+
 ### Using Docker/container environments
 
 Environment variables are particularly useful in containerized environments:
 
 ```bash
+# With local CSV file
 docker run \
   -e CSV_FILE_PATH=/data/copy-requests.csv \
   -e AWS_REGION=us-west-2 \
   -e PARALLELISM=5 \
   -v /local/path:/data \
+  your-image
+
+# With S3 CSV file
+docker run \
+  -e CSV_FILE_PATH=s3://my-config-bucket/copy-requests.csv \
+  -e AWS_REGION=us-west-2 \
+  -e PARALLELISM=5 \
   your-image
 ```
 
@@ -190,7 +227,10 @@ The AWS credentials used must have the following permissions:
         "s3:GetObjectAttributes",
         "s3:GetObjectVersion"
       ],
-      "Resource": "arn:aws:s3:::source-bucket/*"
+      "Resource": [
+        "arn:aws:s3:::source-bucket/*",
+        "arn:aws:s3:::csv-config-bucket/*"
+      ]
     },
     {
       "Effect": "Allow",
@@ -205,12 +245,15 @@ The AWS credentials used must have the following permissions:
 }
 ```
 
+**Note**: If using an S3 URI for the CSV file (e.g., `s3://csv-config-bucket/file.csv`), ensure the credentials have `s3:GetObject` permission for that bucket as well.
+
 ## Features
 
 - **Automatic Multi-part Handling**: Files larger than 5GB are automatically copied using multi-part operations
 - **Version Support**: Supports copying specific versions of S3 objects
 - **SHA256 Checksums**: Automatically calculates and stores SHA256 checksums
 - **Controlled Parallelism**: Control how many files are copied simultaneously
+- **S3 URI Support**: CSV file can be read from S3 (s3://bucket/key) or local file system
 - **Flexible Configuration**: Support for both command-line arguments and environment variables with priority override
 - **Comprehensive Logging**: Detailed logging of all operations
 - **Error Handling**: Continues processing even if some copies fail, provides summary at the end

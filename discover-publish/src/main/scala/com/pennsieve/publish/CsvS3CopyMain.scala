@@ -18,11 +18,14 @@ package com.pennsieve.publish
 
 import com.github.tototoshi.csv._
 import com.typesafe.scalalogging.LazyLogging
+import software.amazon.awssdk.core.sync.ResponseTransformer
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
+import software.amazon.awssdk.services.s3.model.{ GetObjectRequest, RequestPayer }
 
 import java.io.File
+import java.nio.file.{ Files, Path, StandardCopyOption }
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.{ Duration, FiniteDuration, SECONDS }
 import scala.concurrent.{ Await, ExecutionContext, Future }
@@ -147,6 +150,58 @@ object CsvS3CopyMain extends LazyLogging {
   }
 
   /**
+    * Parse an S3 URI into bucket and key
+    * Supports formats: s3://bucket/key or s3://bucket/path/to/key
+    */
+  def parseS3Uri(uri: String): Option[(String, String)] = {
+    val s3UriPattern = "^s3://([^/]+)/(.+)$".r
+    uri match {
+      case s3UriPattern(bucket, key) => Some((bucket, key))
+      case _ => None
+    }
+  }
+
+  /**
+    * Check if the path is an S3 URI
+    */
+  def isS3Uri(path: String): Boolean = {
+    path.startsWith("s3://")
+  }
+
+  /**
+    * Download a file from S3 to a temporary location
+    */
+  def downloadFromS3(
+    bucket: String,
+    key: String,
+    client: S3Client
+  ): Either[String, File] = {
+    Try {
+      logger.info(s"Downloading CSV file from S3: s3://$bucket/$key")
+
+      // Create temporary file
+      val tempFile = Files.createTempFile("csv-s3-copy-", ".csv").toFile
+      tempFile.deleteOnExit()
+
+      val getObjectRequest = GetObjectRequest
+        .builder()
+        .bucket(bucket)
+        .key(key)
+        .requestPayer(RequestPayer.REQUESTER)
+        .build()
+
+      client.getObject(getObjectRequest, tempFile.toPath)
+
+      logger.info(s"Downloaded CSV file to temporary location: ${tempFile.getAbsolutePath}")
+      tempFile
+    } match {
+      case Success(file) => Right(file)
+      case Failure(exception) =>
+        Left(s"Failed to download CSV file from S3: ${exception.getMessage}")
+    }
+  }
+
+  /**
     * Parse a CSV row into a CopyRequest
     * Expected CSV columns: source_bucket, source_key, source_version_id (optional), destination_bucket, destination_key
     */
@@ -198,37 +253,75 @@ object CsvS3CopyMain extends LazyLogging {
 
   /**
     * Read and parse CSV file into a list of CopyRequests
+    * Supports both local file paths and S3 URIs (s3://bucket/key)
     */
-  def readCsvFile(csvFilePath: String): Either[String, List[CopyRequest]] = {
-    Try {
+  def readCsvFile(
+    csvFilePath: String,
+    s3ClientOpt: Option[S3Client] = None
+  ): Either[String, List[CopyRequest]] = {
+    // Determine if we need to download from S3
+    val fileToReadEither: Either[String, (File, Boolean)] = if (isS3Uri(csvFilePath)) {
+      // Parse S3 URI and download
+      parseS3Uri(csvFilePath) match {
+        case Some((bucket, key)) =>
+          s3ClientOpt match {
+            case Some(client) =>
+              downloadFromS3(bucket, key, client).map(file => (file, true))
+            case None =>
+              Left("S3 client required to download CSV file from S3")
+          }
+        case None =>
+          Left(s"Invalid S3 URI format: $csvFilePath (expected s3://bucket/key)")
+      }
+    } else {
+      // Local file path
       val file = new File(csvFilePath)
       if (!file.exists()) {
-        throw new IllegalArgumentException(s"CSV file not found: $csvFilePath")
+        Left(s"CSV file not found: $csvFilePath")
+      } else {
+        Right((file, false))
       }
+    }
 
-      val reader = CSVReader.open(file)
-      try {
-        val rows = reader.allWithHeaders()
-        val results = rows.zipWithIndex.map {
-          case (row, index) =>
-            parseCsvRow(row, index + 2) // +2 because row 1 is header, and index is 0-based
-        }
+    // Read and parse the file
+    fileToReadEither.flatMap {
+      case (file, isTemporary) =>
+        val result = Try {
+          val reader = CSVReader.open(file)
+          try {
+            val rows = reader.allWithHeaders()
+            val results = rows.zipWithIndex.map {
+              case (row, index) =>
+                parseCsvRow(row, index + 2) // +2 because row 1 is header, and index is 0-based
+            }
 
-        // Check for any parsing errors
-        val errors = results.collect { case Left(error) => error }
-        if (errors.nonEmpty) {
-          Left(errors.mkString("\n"))
-        } else {
-          val requests = results.collect { case Right(request) => request }
-          Right(requests)
+            // Check for any parsing errors
+            val errors = results.collect { case Left(error) => error }
+            if (errors.nonEmpty) {
+              Left(errors.mkString("\n"))
+            } else {
+              val requests = results.collect { case Right(request) => request }
+              Right(requests)
+            }
+          } finally {
+            reader.close()
+            // Clean up temporary file if it was downloaded from S3
+            if (isTemporary) {
+              try {
+                file.delete()
+                logger.debug(s"Cleaned up temporary CSV file: ${file.getAbsolutePath}")
+              } catch {
+                case ex: Exception =>
+                  logger.warn(s"Failed to delete temporary CSV file: ${ex.getMessage}")
+              }
+            }
+          }
+        } match {
+          case Success(parseResult) => parseResult
+          case Failure(exception) =>
+            Left(s"Failed to read CSV file: ${exception.getMessage}")
         }
-      } finally {
-        reader.close()
-      }
-    } match {
-      case Success(result) => result
-      case Failure(exception) =>
-        Left(s"Failed to read CSV file: ${exception.getMessage}")
+        result
     }
   }
 
@@ -291,6 +384,7 @@ object CsvS3CopyMain extends LazyLogging {
       |
       |Required:
       |  --csv <path>          Path to CSV file with copy instructions
+      |                        Supports local file paths and S3 URIs (s3://bucket/key)
       |                        (or set CSV_FILE_PATH environment variable)
       |
       |Optional:
@@ -328,6 +422,9 @@ object CsvS3CopyMain extends LazyLogging {
       |  export AWS_REGION=us-west-2
       |  export PARALLELISM=3
       |  sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
+      |
+      |Example with S3 URI:
+      |  sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv s3://my-bucket/path/to/file.csv"
       |""".stripMargin)
   }
 
@@ -351,52 +448,56 @@ object CsvS3CopyMain extends LazyLogging {
 
     logger.info(s"Settings: $settings")
 
-    // Read and parse CSV file
-    val copyRequestsEither = readCsvFile(settings.csvFilePath)
+    // Initialize S3 client (needed for both CSV download and copy operations)
+    val client = s3Client(settings.region)
 
-    copyRequestsEither match {
-      case Left(error) =>
-        logger.error(s"Failed to parse CSV file: $error")
-        sys.exit(1)
+    try {
+      // Read and parse CSV file (supports both local paths and S3 URIs)
+      val copyRequestsEither = readCsvFile(settings.csvFilePath, Some(client))
 
-      case Right(copyRequests) =>
-        logger.info(s"Successfully parsed ${copyRequests.length} copy requests")
+      copyRequestsEither match {
+        case Left(error) =>
+          logger.error(s"Failed to parse CSV file: $error")
+          sys.exit(1)
 
-        if (copyRequests.isEmpty) {
-          logger.warn("No copy requests found in CSV file")
-          sys.exit(0)
-        }
+        case Right(copyRequests) =>
+          logger.info(s"Successfully parsed ${copyRequests.length} copy requests")
 
-        // Initialize S3 client and uploader
-        val client = s3Client(settings.region)
-        val uploader = MultipartUploader(client, settings.maxPartSize)
-
-        try {
-          // Process all copy requests
-          val resultsFuture = processCopyRequests(copyRequests, uploader, settings)
-          val results = Await.result(resultsFuture, settings.maxWaitTime)
-
-          // Summary
-          val successful = results.count(_.isRight)
-          val failed = results.count(_.isLeft)
-
-          logger.info(s"Copy operations completed: $successful successful, $failed failed")
-
-          if (failed > 0) {
-            logger.error("Some copy operations failed")
-            sys.exit(1)
-          } else {
-            logger.info("All copy operations completed successfully")
+          if (copyRequests.isEmpty) {
+            logger.warn("No copy requests found in CSV file")
             sys.exit(0)
           }
 
-        } catch {
-          case ex: Throwable =>
-            logger.error("Unexpected error during copy operations", ex)
-            sys.exit(1)
-        } finally {
-          client.close()
-        }
+          // Initialize uploader
+          val uploader = MultipartUploader(client, settings.maxPartSize)
+
+          try {
+            // Process all copy requests
+            val resultsFuture = processCopyRequests(copyRequests, uploader, settings)
+            val results = Await.result(resultsFuture, settings.maxWaitTime)
+
+            // Summary
+            val successful = results.count(_.isRight)
+            val failed = results.count(_.isLeft)
+
+            logger.info(s"Copy operations completed: $successful successful, $failed failed")
+
+            if (failed > 0) {
+              logger.error("Some copy operations failed")
+              sys.exit(1)
+            } else {
+              logger.info("All copy operations completed successfully")
+              sys.exit(0)
+            }
+
+          } catch {
+            case ex: Throwable =>
+              logger.error("Unexpected error during copy operations", ex)
+              sys.exit(1)
+          }
+      }
+    } finally {
+      client.close()
     }
   }
 }
