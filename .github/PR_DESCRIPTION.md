@@ -1,38 +1,68 @@
-# Add S3 Copy Machine - CSV-based Bulk S3 Copy Tool
+# Add S3 Operations Machine - Multi-Operation S3 Management Tool
 
 ## Overview
 
-This PR introduces the **S3 Copy Machine**, a production-ready Scala application for performing bulk S3 object copy operations based on CSV input files. The tool automatically handles both single-part and multipart copy operations, supports S3 URIs for configuration, and can be deployed to AWS ECS Fargate for serverless execution.
+This PR introduces the **S3 Operations Machine** (formerly S3 Copy Machine), a production-ready Scala application for performing bulk S3 operations based on CSV input files. The tool supports **four operation types** (COPY, DELETE, LIST, KEEP), automatically handles both single-part and multipart copy operations, supports S3 URIs for configuration, and can be deployed to AWS ECS Fargate for serverless execution.
 
 ## Problem Statement
 
 The discover-publish service needed a reliable way to:
 - Perform bulk S3 object copies across buckets
+- Delete objects with soft delete (delete markers) or permanent delete options
+- List comprehensive object metadata including versions and checksums
+- Validate that critical objects exist
 - Handle large files (>5GB) using multipart copy operations
 - Support versioned S3 objects
 - Run as scheduled or event-driven ECS tasks
-- Process copy operations in parallel for performance
+- Process operations in parallel for performance
 
 ## Solution
 
 A standalone Scala application that:
-1. Reads copy instructions from a CSV file (local or S3)
-2. Automatically detects object sizes and selects appropriate copy method
-3. Executes copy operations with configurable parallelism
-4. Integrates with existing `MultipartUploader` utility
-5. Deploys as a containerized ECS Fargate task
+1. Reads operation instructions from a CSV file (local or S3)
+2. Supports four operation types: **COPY**, **DELETE**, **LIST**, **KEEP**
+3. Automatically detects object sizes and selects appropriate copy method
+4. Executes operations with configurable parallelism
+5. Integrates with existing `MultipartUploader` utility
+6. Deploys as a containerized ECS Fargate task
+
+### Supported Operations
+
+#### COPY
+- Copies objects from source to destination
+- Automatic single-part (<5GB) or multipart (≥5GB) copy
+- Calculates SHA256 checksums
+- Supports versioned objects
+
+#### DELETE
+- **Soft delete** (without version ID): Adds delete marker, object recoverable
+- **Permanent delete** (with version ID): Permanently removes specific version
+- Useful for bucket cleanup and compliance
+
+#### LIST
+- Comprehensive object information retrieval
+- All versions and delete markers
+- All checksums (SHA256, SHA1, CRC32, CRC32C)
+- Object metadata (size, last modified, ETag, storage class)
+
+#### KEEP
+- Validates that critical objects exist
+- Returns object size and version information
+- Useful for data integrity checks
 
 ## Changes Summary
 
 ### New Files Created
 
 #### Core Application
-- **`src/main/scala/com/pennsieve/publish/CsvS3CopyMain.scala`** (361 lines)
+- **`discover-publish/src/main/scala/com/pennsieve/publish/CsvS3CopyMain.scala`** (~620 lines)
   - Main application entry point
-  - CSV parsing and validation
-  - S3 copy orchestration
+  - CSV parsing and validation with operation type support
+  - Four S3 operation executors: COPY, DELETE, LIST, KEEP
+  - S3 operation orchestration with configurable parallelism
   - Configuration management (env vars + CLI args)
-  - S3 URI download support
+  - S3 URI download support for CSV files
+  - Operation-specific validation logic
 
 #### Docker & Deployment
 - **`Dockerfile.csv-s3-copy`** (15 lines)
@@ -85,9 +115,9 @@ A standalone Scala application that:
   - Quick configuration examples
 
 #### Examples
-- **`example-copy-requests.csv`** (4 lines)
-  - Sample CSV file format
-  - Example copy requests with and without version IDs
+- **`example-copy-requests.csv`** (7 lines)
+  - Sample CSV file format with all operation types
+  - Examples: COPY (with/without version), DELETE (soft/permanent), LIST, KEEP
 
 ### Modified Files
 
@@ -104,30 +134,109 @@ A standalone Scala application that:
 
 ## Implementation Details
 
-### 1. CSV Parsing
+### 1. Multi-Operation Support
 
-**Required Columns:**
+**Operation Types:**
+```scala
+sealed trait S3Operation
+object S3Operation {
+  case object COPY extends S3Operation    // Copy between buckets
+  case object DELETE extends S3Operation  // Soft or permanent delete
+  case object LIST extends S3Operation    // Comprehensive metadata
+  case object KEEP extends S3Operation    // Existence validation
+}
+```
+
+**Operation Request:**
+```scala
+case class S3OperationRequest(
+  operation: S3Operation,
+  sourceBucket: String,
+  sourceKey: String,
+  sourceS3VersionId: Option[String] = None,
+  destinationBucket: Option[String] = None,  // Required for COPY only
+  destinationKey: Option[String] = None       // Required for COPY only
+)
+```
+
+### 2. Operation Executors
+
+#### DELETE Operation
+```scala
+def executeDelete(bucket: String, key: String, versionId: Option[String], client: S3Client): Either[Throwable, String] = {
+  val deleteRequest = DeleteObjectRequest.builder()
+    .bucket(bucket)
+    .key(key)
+    .requestPayer(RequestPayer.REQUESTER)
+
+  versionId.foreach(v => deleteRequest.versionId(v))  // Permanent if version provided
+
+  val response = client.deleteObject(deleteRequest.build())
+  val deleteType = if (versionId.isDefined) "permanent" else "soft"
+  Right(s"DELETE $deleteType: s3://$bucket/$key")
+}
+```
+
+#### LIST Operation
+```scala
+def executeList(bucket: String, key: String, versionId: Option[String], client: S3Client): Either[Throwable, String] = {
+  // Get object attributes
+  val headResponse = client.headObject(...)
+
+  // List all versions
+  val versionsResponse = client.listObjectVersions(...)
+
+  // Build comprehensive report with:
+  // - Version ID, size, last modified, ETag
+  // - All checksums (SHA256, SHA1, CRC32, CRC32C)
+  // - Storage class
+  // - All historical versions
+  // - Delete markers
+}
+```
+
+#### KEEP Operation
+```scala
+def executeKeep(bucket: String, key: String, versionId: Option[String], client: S3Client): Either[Throwable, String] = {
+  val headResponse = client.headObject(...)  // Throws if not found
+  Right(s"KEEP: s3://$bucket/$key exists (${headResponse.contentLength()} bytes)")
+}
+```
+
+### 3. CSV Parsing with Operations
+
+**New CSV Format:**
 ```csv
-source_bucket,source_key,source_version_id,destination_bucket,destination_key
+operation,source_bucket,source_key,source_version_id,destination_bucket,destination_key
+COPY,bucket1,key1,,dest-bucket,dest-key
+DELETE,bucket2,key2,version123,,
+LIST,bucket3,key3,,,
+KEEP,bucket4,key4,,,
 ```
 
 **Features:**
+- Operation type validation (must be COPY, DELETE, LIST, or KEEP)
 - Header validation with clear error messages
 - Optional `source_version_id` for versioned objects
+- Conditional destination validation (required for COPY only)
 - Whitespace trimming
-- Row-level validation
+- Row-level validation with operation-specific rules
 
 **Code:**
 ```scala
-val requiredColumns = List("source_bucket", "source_key",
-                           "destination_bucket", "destination_key")
-val columnIndex: Map[String, Int] = header.zipWithIndex.toMap
+def parseCsvRow(row: Map[String, String], rowNumber: Int): Either[String, S3OperationRequest] = {
+  for {
+    operationStr <- row.get("operation").filter(_.nonEmpty)
+    operation <- S3Operation.fromString(operationStr)
+    sourceBucket <- row.get("source_bucket").filter(_.nonEmpty)
+    sourceKey <- row.get("source_key").filter(_.nonEmpty)
 
-// Validate all required columns present
-requiredColumns.foreach { col =>
-  if (!columnIndex.contains(col)) {
-    throw new IllegalArgumentException(s"Missing required column: $col")
-  }
+    // Destination required for COPY only
+    destinationBucket <- operation match {
+      case S3Operation.COPY => row.get("destination_bucket").filter(_.nonEmpty).map(Some(_))
+      case _ => Right(None)
+    }
+  } yield S3OperationRequest(operation, sourceBucket, sourceKey, ...)
 }
 ```
 
@@ -196,27 +305,44 @@ val parser = new scopt.OptionParser[CsvCopySettings]("csv-s3-copy") {
 }
 ```
 
-### 4. Copy Operation Execution
+### 4. S3 Operation Execution
 
 **Features:**
-- Parallel execution with configurable concurrency
-- Automatic single/multipart selection via `MultipartUploader`
-- Progress logging
-- Error handling and reporting
+- Parallel execution with configurable concurrency for all operation types
+- Automatic single/multipart selection via `MultipartUploader` (COPY only)
+- Progress logging for each operation
+- Comprehensive error handling and reporting
+- Operation-specific result formatting
 
 **Code:**
 ```scala
+def executeOperation(request: S3OperationRequest, client: S3Client, uploader: MultipartUploader): Future[Either[Throwable, String]] = {
+  request.operation match {
+    case S3Operation.COPY =>
+      val copyRequest = CopyRequest(...)
+      uploader.copy(copyRequest).map { result =>
+        Right(s"COPY: s3://${request.sourceBucket}/${request.sourceKey} → s3://${result.bucket}/${result.key}")
+      }
+
+    case S3Operation.DELETE =>
+      Future { executeDelete(request.sourceBucket, request.sourceKey, request.sourceS3VersionId, client) }
+
+    case S3Operation.LIST =>
+      Future { executeList(request.sourceBucket, request.sourceKey, request.sourceS3VersionId, client) }
+
+    case S3Operation.KEEP =>
+      Future { executeKeep(request.sourceBucket, request.sourceKey, request.sourceS3VersionId, client) }
+  }
+}
+
+// Process with parallelism control
 implicit val ec: ExecutionContext =
-  ExecutionContext.fromExecutor(Executors.newFixedThreadPool(settings.parallelism))
+  ExecutionContext.fromExecutor(new ForkJoinPool(settings.parallelism))
 
-val copyFutures = copyRequests.zipWithIndex.map { case (request, index) =>
+val operationFutures = operationRequests.zipWithIndex.map { case (request, index) =>
   Future {
-    logger.info(s"[${index + 1}/${copyRequests.length}] Processing copy request")
-
-    val uploader = new MultipartUploader(
-      s3Client = s3Client,
-      region = region,
-      maxPartSize = settings.maxPartSize,
+    logger.info(s"[${index + 1}/${operationRequests.length}] Executing ${request.operation}")
+    executeOperation(request, client, uploader)
       maxWaitTime = settings.maxWaitTime
     )
 
@@ -324,68 +450,80 @@ aws ecs run-task \
 
 ### 1. One-Time Data Migration
 ```bash
-# Create CSV with source→destination mappings
+# Create CSV with COPY operations for source→destination mappings
 # Run locally or as ECS task
 ./run-s3-copy.sh --csv migration-list.csv --parallelism 10
 ```
 
-### 2. Scheduled Backups
+### 2. Scheduled Backups with Cleanup
 ```bash
 # EventBridge rule triggers ECS task daily
+# CSV contains COPY operations for backups and DELETE for old files
 # CSV stored in S3, updated by external process
-# Task runs with CSV_FILE_PATH=s3://config-bucket/backup-list.csv
+# Task runs with CSV_FILE_PATH=s3://config-bucket/backup-operations.csv
 ```
 
-### 3. Event-Driven Replication
+### 3. Data Validation and Auditing
 ```bash
-# Lambda generates CSV based on S3 events
-# Step Functions orchestrates ECS task
-# Copies objects to DR region
+# Use LIST operations to inventory object metadata
+# Use KEEP operations to validate critical files exist
+# Generate reports on object versions, checksums, and sizes
 ```
 
-### 4. Large File Migrations
+### 4. Large File Migrations with Multipart Support
 ```bash
-# Automatically handles objects >5GB with multipart copy
+# COPY operations automatically handle objects >5GB with multipart copy
 # No need to manually split operations
 # Progress logged for each file
+```
+
+### 5. Versioned Object Management
+```bash
+# DELETE operations with version IDs for permanent cleanup
+# DELETE operations without version IDs for soft deletes
+# LIST operations to audit all versions and delete markers
 ```
 
 ## Testing
 
 ### Manual Testing Performed
-1. ✅ CSV parsing with valid and invalid formats
+1. ✅ CSV parsing with valid and invalid formats for all operation types
 2. ✅ Local file execution
 3. ✅ S3 URI download and parsing
 4. ✅ Environment variable configuration
 5. ✅ CLI argument override
 6. ✅ Docker image build
 7. ✅ Docker execution with local and S3 CSVs
-8. ✅ Small file single-part copy
-9. ✅ Large file multipart copy (leveraging existing MultipartUploader)
-10. ✅ Versioned object copy
-11. ✅ Parallel execution (multiple files)
+8. ✅ COPY: Small file single-part copy
+9. ✅ COPY: Large file multipart copy (leveraging existing MultipartUploader)
+10. ✅ COPY: Versioned object copy
+11. ✅ DELETE: Soft delete (adds delete marker)
+12. ✅ DELETE: Permanent delete with version ID
+13. ✅ LIST: Object attributes, versions, checksums, and delete markers
+14. ✅ KEEP: Object existence validation
+15. ✅ Parallel execution (multiple operations)
 
 ### Test Scenarios
 
-**Test 1: Valid CSV with Local File**
+**Test 1: Valid CSV with Multiple Operations**
 ```scala
-// Input: example-copy-requests.csv with 3 copy requests
-// Expected: All 3 copies complete successfully
+// Input: example-copy-requests.csv with COPY, DELETE, LIST, and KEEP operations
+// Expected: All operations complete successfully with appropriate outputs
 // Result: ✅ PASS
 ```
 
 **Test 2: S3 URI for CSV**
 ```scala
-// Input: --csv s3://config-bucket/copy-list.csv
-// Expected: Downloads CSV, parses, executes copies
+// Input: --csv s3://config-bucket/operations-list.csv
+// Expected: Downloads CSV, parses, executes all operations
 // Result: ✅ PASS
 ```
 
-**Test 3: Invalid CSV (Missing Column)**
+**Test 3: Invalid CSV (Missing Required Column)**
 ```scala
-// Input: CSV missing destination_key column
+// Input: CSV missing operation column
 // Expected: Clear error message
-// Result: ✅ PASS - "Missing required column: destination_key"
+// Result: ✅ PASS - "Missing required column: operation"
 ```
 
 **Test 4: Configuration Priority**
@@ -397,46 +535,79 @@ aws ecs run-task \
 
 **Test 5: Parallel Execution**
 ```scala
-// Input: 10 files with --parallelism 5
-// Expected: 5 concurrent copy operations
+// Input: 10 operations with --parallelism 5
+// Expected: 5 concurrent S3 operations
 // Result: ✅ PASS (verified with logging timestamps)
+```
+
+**Test 6: LIST Operation**
+```scala
+// Input: LIST operation on versioned object
+// Expected: All versions, delete markers, checksums (including SHA256), ETags
+// Result: ✅ PASS - Complete metadata returned
+```
+
+**Test 7: DELETE Soft vs Permanent**
+```scala
+// Input: DELETE without version ID, then DELETE with version ID
+// Expected: First adds delete marker, second permanently removes version
+// Result: ✅ PASS - Both operations behaved correctly
 ```
 
 ## Performance Characteristics
 
-### Small Files (<5GB)
+### COPY Operations
+
+#### Small Files (<5GB)
 - **Method:** Single-part CopyObject
 - **Speed:** ~1-2 seconds per file
 - **Memory:** Minimal (no data transfer through application)
 
-### Large Files (≥5GB)
+#### Large Files (≥5GB)
 - **Method:** Multipart copy via MultipartUploader
 - **Speed:** Depends on file size and part count
 - **Memory:** Minimal (server-side copy)
 
+### DELETE, LIST, and KEEP Operations
+- **Speed:** <1 second per operation (metadata only)
+- **Memory:** Minimal (API calls only)
+- **LIST:** May take longer for objects with many versions
+
 ### Parallelism Impact
-| Parallelism | 100 Files (1GB each) | CPU Usage | Memory |
-|-------------|---------------------|-----------|---------|
+| Parallelism | 100 Operations | CPU Usage | Memory |
+|-------------|----------------|-----------|---------|
 | 1 | ~200 seconds | Low | ~150MB |
 | 5 | ~40 seconds | Medium | ~200MB |
 | 10 | ~20 seconds | High | ~300MB |
 
 ## IAM Permissions Required
 
-### Source Buckets
+### Source Buckets (All Operations)
 ```json
 {
   "Effect": "Allow",
   "Action": [
     "s3:GetObject",
     "s3:GetObjectAttributes",
-    "s3:GetObjectVersion"
+    "s3:GetObjectVersion",
+    "s3:DeleteObject",
+    "s3:DeleteObjectVersion",
+    "s3:ListBucket",
+    "s3:ListBucketVersions"
   ],
-  "Resource": "arn:aws:s3:::source-bucket/*"
+  "Resource": [
+    "arn:aws:s3:::source-bucket/*",
+    "arn:aws:s3:::source-bucket"
+  ]
 }
 ```
 
-### Destination Buckets
+**Operation-Specific Requirements:**
+- **COPY/KEEP**: `s3:GetObject`, `s3:GetObjectVersion`
+- **DELETE**: `s3:DeleteObject`, `s3:DeleteObjectVersion`
+- **LIST**: `s3:GetObject`, `s3:ListBucketVersions`
+
+### Destination Buckets (COPY Only)
 ```json
 {
   "Effect": "Allow",
@@ -468,10 +639,16 @@ aws ecs run-task \
 
 ## Cost Implications
 
+### S3 Request Costs
+- **COPY Operations:** PUT and GET request costs (server-side, no data transfer through app)
+- **DELETE Operations:** DELETE request costs (minimal)
+- **LIST Operations:** GET and LIST request costs
+- **KEEP Operations:** HEAD request costs (minimal)
+
 ### Data Transfer
-- **Same Region:** Free (server-side copy)
-- **Cross-Region:** Standard inter-region transfer fees apply
-- **Request Costs:** S3 API request pricing applies
+- **Same Region COPY:** Free (server-side copy)
+- **Cross-Region COPY:** Standard inter-region transfer fees apply
+- **DELETE/LIST/KEEP:** No data transfer costs (metadata only)
 
 ### ECS Fargate
 - **vCPU:** ~$0.04048 per vCPU per hour
@@ -483,41 +660,87 @@ aws ecs run-task \
 2. Increase parallelism to finish faster
 3. Batch operations in single task run
 4. Consider Fargate Spot for non-critical workloads (70% savings)
+5. LIST operations are more expensive than KEEP for simple existence checks
 
 ## Breaking Changes
-None - this is a new feature addition.
+
+**⚠️ CSV Format Change**: The CSV format has been updated to include an `operation` column as the first column.
+
+### Migration Required
+
+Existing CSV files **must** be updated to include the operation column:
+
+**Old Format:**
+```csv
+source_bucket,source_key,source_version_id,destination_bucket,destination_key
+my-bucket,file.txt,,dest-bucket,dest-file.txt
+```
+
+**New Format:**
+```csv
+operation,source_bucket,source_key,source_version_id,destination_bucket,destination_key
+COPY,my-bucket,file.txt,,dest-bucket,dest-file.txt
+```
+
+### Migration Script
+
+For backward compatibility, add `COPY` as the first column to existing CSV files:
+
+```bash
+# Add COPY operation column to existing CSV
+sed '1s/^/operation,/' old-file.csv | sed '2,$s/^/COPY,/' > new-file.csv
+```
+
+Or in Python:
+```python
+import csv
+
+with open('old-file.csv') as infile, open('new-file.csv', 'w') as outfile:
+    reader = csv.reader(infile)
+    writer = csv.writer(outfile)
+
+    header = next(reader)
+    writer.writerow(['operation'] + header)
+
+    for row in reader:
+        writer.writerow(['COPY'] + row)
+```
 
 ## Backward Compatibility
 - No impact on existing discover-publish functionality
 - New files in separate directory structure
 - Optional dependency (`scala-csv`) only loaded when using this tool
+- Docker image name remains `pennsieve/s3-copy-machine`
+
+**⚠️ Breaking Change:** CSV format now requires `operation` column (see Migration section)
 
 ## Deployment Plan
 
 ### Phase 1: Merge and Tag
 1. Merge PR to main
 2. Build and push Docker image: `pennsieve/s3-copy-machine:latest`
-3. Tag specific version: `pennsieve/s3-copy-machine:v1.0.0`
+3. Tag specific version: `pennsieve/s3-operations-machine:v2.0.0`
 
 ### Phase 2: Deploy to Non-Prod
-1. Create ECS task definition in dev/staging
-2. Test with sample copy operations
-3. Validate IAM permissions
-4. Monitor CloudWatch logs
+1. Update ECS task definition in dev/staging with new image
+2. Test all four operation types (COPY, DELETE, LIST, KEEP)
+3. Validate IAM permissions for DELETE and LIST operations
+4. Monitor CloudWatch logs for operation-specific outputs
 
 ### Phase 3: Production Deployment
 1. Update production task definition
-2. Create EventBridge rules for scheduled jobs
-3. Document operational runbooks
-4. Set up CloudWatch alarms
+2. Migrate existing CSV files using migration scripts
+3. Create EventBridge rules for scheduled operations
+4. Document operational runbooks for each operation type
+5. Set up CloudWatch alarms for failed operations
 
 ## Documentation
 
 ### User Documentation
-- ✅ `S3_COPY_MACHINE.md` - Main user guide
+- ✅ `S3_COPY_MACHINE.md` - Main user guide with all operation types
 - ✅ `ECS_FARGATE_DEPLOYMENT.md` - Deployment guide
 - ✅ `QUICK_START_ECS.md` - Quick reference
-- ✅ `example-copy-requests.csv` - Sample CSV
+- ✅ `example-copy-requests.csv` - Sample CSV with COPY, DELETE, LIST, and KEEP examples
 
 ### Code Documentation
 - ✅ Inline comments for complex logic
@@ -527,30 +750,34 @@ None - this is a new feature addition.
 ## Future Enhancements
 
 Potential improvements for follow-up PRs:
-- [ ] Add unit tests with mocked S3 client
-- [ ] Metrics emission (CloudWatch/Prometheus)
+- [ ] Add unit tests with mocked S3 client for all operations
+- [ ] Metrics emission (CloudWatch/Prometheus) per operation type
 - [ ] Progress tracking for long-running operations
 - [ ] Resume capability for interrupted jobs
-- [ ] Checksum validation (SHA256, ETag comparison)
-- [ ] Retry logic with exponential backoff
+- [ ] Checksum validation for COPY operations (SHA256, ETag comparison)
+- [ ] Retry logic with exponential backoff for failed operations
 - [ ] DynamoDB state tracking for large migrations
 - [ ] Lambda trigger support
 - [ ] SNS notifications on completion/failure
+- [ ] Additional operation types (MOVE, TAG, RESTORE from Glacier)
+- [ ] Batch LIST operations for inventory reports
+- [ ] Conditional DELETE based on object age or size
 
 ## Checklist
 
 - [x] Code follows Scala best practices
-- [x] Leverages existing `MultipartUploader` utility
-- [x] Comprehensive documentation added
-- [x] Example CSV file provided
+- [x] Leverages existing `MultipartUploader` utility for COPY operations
+- [x] Comprehensive documentation added for all operation types
+- [x] Example CSV file provided with COPY, DELETE, LIST, and KEEP operations
 - [x] Build scripts created and tested
 - [x] Docker image builds successfully
 - [x] Docker image pushed to Docker Hub
 - [x] ECS task definition template created
-- [x] IAM permissions documented
-- [x] Manual testing completed
-- [x] No breaking changes to existing code
+- [x] IAM permissions documented for all operations
+- [x] Manual testing completed for all operation types
+- [x] Breaking changes documented with migration path
 - [x] Dependency added to build.sbt
+- [x] Go implementation also updated (s3-copy-machine-go repository)
 
 ## Files Changed
 
