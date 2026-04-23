@@ -22,15 +22,18 @@ import software.amazon.awssdk.core.sync.ResponseTransformer
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.services.s3.S3Client
-import software.amazon.awssdk.services.s3.model.{ GetObjectRequest, RequestPayer }
+import software.amazon.awssdk.services.s3.model.{
+  GetObjectRequest,
+  RequestPayer
+}
 
 import java.io.File
 import java.nio.file.{ Files, Path, StandardCopyOption }
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.{ Duration, FiniteDuration, SECONDS }
 import scala.concurrent.{ Await, ExecutionContext, Future }
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{ Failure, Success, Try }
+import java.util.concurrent.ForkJoinPool
 
 case class CsvCopySettings(
   csvFilePath: String = "",
@@ -118,7 +121,10 @@ object CsvCopySettings {
     * Parse command line arguments and override settings
     * Command line arguments take priority over existing settings
     */
-  def fromArgs(args: List[String], settings: CsvCopySettings): CsvCopySettings = {
+  def fromArgs(
+    args: List[String],
+    settings: CsvCopySettings
+  ): CsvCopySettings = {
     args match {
       case h :: t if t.nonEmpty =>
         fromArgs(t.drop(1), settings.withSetting(h, t.head))
@@ -192,7 +198,9 @@ object CsvS3CopyMain extends LazyLogging {
 
       client.getObject(getObjectRequest, tempFile.toPath)
 
-      logger.info(s"Downloaded CSV file to temporary location: ${tempFile.getAbsolutePath}")
+      logger.info(
+        s"Downloaded CSV file to temporary location: ${tempFile.getAbsolutePath}"
+      )
       tempFile
     } match {
       case Success(file) => Right(file)
@@ -220,7 +228,9 @@ object CsvS3CopyMain extends LazyLogging {
       sourceKey <- row
         .get(ColumnNames.SOURCE_KEY)
         .filter(_.nonEmpty)
-        .toRight(s"Row $rowNumber: Missing or empty '${ColumnNames.SOURCE_KEY}'")
+        .toRight(
+          s"Row $rowNumber: Missing or empty '${ColumnNames.SOURCE_KEY}'"
+        )
 
       destinationBucket <- row
         .get(ColumnNames.DESTINATION_BUCKET)
@@ -260,28 +270,31 @@ object CsvS3CopyMain extends LazyLogging {
     s3ClientOpt: Option[S3Client] = None
   ): Either[String, List[CopyRequest]] = {
     // Determine if we need to download from S3
-    val fileToReadEither: Either[String, (File, Boolean)] = if (isS3Uri(csvFilePath)) {
-      // Parse S3 URI and download
-      parseS3Uri(csvFilePath) match {
-        case Some((bucket, key)) =>
-          s3ClientOpt match {
-            case Some(client) =>
-              downloadFromS3(bucket, key, client).map(file => (file, true))
-            case None =>
-              Left("S3 client required to download CSV file from S3")
-          }
-        case None =>
-          Left(s"Invalid S3 URI format: $csvFilePath (expected s3://bucket/key)")
-      }
-    } else {
-      // Local file path
-      val file = new File(csvFilePath)
-      if (!file.exists()) {
-        Left(s"CSV file not found: $csvFilePath")
+    val fileToReadEither: Either[String, (File, Boolean)] =
+      if (isS3Uri(csvFilePath)) {
+        // Parse S3 URI and download
+        parseS3Uri(csvFilePath) match {
+          case Some((bucket, key)) =>
+            s3ClientOpt match {
+              case Some(client) =>
+                downloadFromS3(bucket, key, client).map(file => (file, true))
+              case None =>
+                Left("S3 client required to download CSV file from S3")
+            }
+          case None =>
+            Left(
+              s"Invalid S3 URI format: $csvFilePath (expected s3://bucket/key)"
+            )
+        }
       } else {
-        Right((file, false))
+        // Local file path
+        val file = new File(csvFilePath)
+        if (!file.exists()) {
+          Left(s"CSV file not found: $csvFilePath")
+        } else {
+          Right((file, false))
+        }
       }
-    }
 
     // Read and parse the file
     fileToReadEither.flatMap {
@@ -309,10 +322,14 @@ object CsvS3CopyMain extends LazyLogging {
             if (isTemporary) {
               try {
                 file.delete()
-                logger.debug(s"Cleaned up temporary CSV file: ${file.getAbsolutePath}")
+                logger.debug(
+                  s"Cleaned up temporary CSV file: ${file.getAbsolutePath}"
+                )
               } catch {
                 case ex: Exception =>
-                  logger.warn(s"Failed to delete temporary CSV file: ${ex.getMessage}")
+                  logger.warn(
+                    s"Failed to delete temporary CSV file: ${ex.getMessage}"
+                  )
               }
             }
           }
@@ -341,40 +358,42 @@ object CsvS3CopyMain extends LazyLogging {
     val batches =
       requests.grouped(settings.parallelism).toList
 
-    batches.foldLeft(Future.successful(List.empty[Either[Throwable, CompletedRequest]])) {
-      (accFuture, batch) =>
-        accFuture.flatMap { acc =>
-          // Process this batch in parallel
-          val batchFutures = batch.map { request =>
-            logger.info(
-              s"Copying ${request.sourceBucket}/${request.sourceKey} -> ${request.destinationBucket}/${request.destinationKey}"
-            )
+    batches.foldLeft(
+      Future.successful(List.empty[Either[Throwable, CompletedRequest]])
+    ) { (accFuture, batch) =>
+      accFuture.flatMap { acc =>
+        // Process this batch in parallel
+        val batchFutures = batch.map { request =>
+          logger.info(
+            s"Copying ${request.sourceBucket}/${request.sourceKey} -> ${request.destinationBucket}/${request.destinationKey}"
+          )
 
-            uploader
-              .copy(request)
-              .map { result =>
-                logger.info(
-                  s"Successfully copied to ${result.bucket}/${result.key} (${result.operation})"
+          uploader
+            .copy(request)
+            .map { result =>
+              logger.info(
+                s"Successfully copied to ${result.bucket}/${result.key} (${result.operation})"
+              )
+              Right(result): Either[Throwable, CompletedRequest]
+            }
+            .recover {
+              case ex: Throwable =>
+                logger.error(
+                  s"Failed to copy ${request.sourceBucket}/${request.sourceKey} -> ${request.destinationBucket}/${request.destinationKey}",
+                  ex
                 )
-                Right(result): Either[Throwable, CompletedRequest]
-              }
-              .recover {
-                case ex: Throwable =>
-                  logger.error(
-                    s"Failed to copy ${request.sourceBucket}/${request.sourceKey} -> ${request.destinationBucket}/${request.destinationKey}",
-                    ex
-                  )
-                  Left(ex): Either[Throwable, CompletedRequest]
-              }
-          }
-
-          Future.sequence(batchFutures).map(acc ++ _)
+                Left(ex): Either[Throwable, CompletedRequest]
+            }
         }
+
+        Future.sequence(batchFutures).map(acc ++ _)
+      }
     }
   }
 
   def printUsage(): Unit = {
-    println("""
+    println(
+      """
       |Usage: CsvS3CopyMain --csv <path-to-csv> [options]
       |
       |Configuration Priority (highest to lowest):
@@ -425,7 +444,8 @@ object CsvS3CopyMain extends LazyLogging {
       |
       |Example with S3 URI:
       |  sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv s3://my-bucket/path/to/file.csv"
-      |""".stripMargin)
+      |""".stripMargin
+    )
   }
 
   def main(args: Array[String]): Unit = {
@@ -441,7 +461,9 @@ object CsvS3CopyMain extends LazyLogging {
     val settings = CsvCopySettings.fromArgs(args.toList, envSettings)
 
     if (settings.csvFilePath.isEmpty) {
-      logger.error("CSV file path is required (use --csv or CSV_FILE_PATH environment variable)")
+      logger.error(
+        "CSV file path is required (use --csv or CSV_FILE_PATH environment variable)"
+      )
       printUsage()
       sys.exit(1)
     }
@@ -450,6 +472,8 @@ object CsvS3CopyMain extends LazyLogging {
 
     // Initialize S3 client (needed for both CSV download and copy operations)
     val client = s3Client(settings.region)
+    implicit val ec: ExecutionContext =
+      ExecutionContext.fromExecutor(new ForkJoinPool(settings.parallelism))
 
     try {
       // Read and parse CSV file (supports both local paths and S3 URIs)
@@ -461,7 +485,9 @@ object CsvS3CopyMain extends LazyLogging {
           sys.exit(1)
 
         case Right(copyRequests) =>
-          logger.info(s"Successfully parsed ${copyRequests.length} copy requests")
+          logger.info(
+            s"Successfully parsed ${copyRequests.length} copy requests"
+          )
 
           if (copyRequests.isEmpty) {
             logger.warn("No copy requests found in CSV file")
@@ -473,14 +499,17 @@ object CsvS3CopyMain extends LazyLogging {
 
           try {
             // Process all copy requests
-            val resultsFuture = processCopyRequests(copyRequests, uploader, settings)
+            val resultsFuture =
+              processCopyRequests(copyRequests, uploader, settings)
             val results = Await.result(resultsFuture, settings.maxWaitTime)
 
             // Summary
             val successful = results.count(_.isRight)
             val failed = results.count(_.isLeft)
 
-            logger.info(s"Copy operations completed: $successful successful, $failed failed")
+            logger.info(
+              s"Copy operations completed: $successful successful, $failed failed"
+            )
 
             if (failed > 0) {
               logger.error("Some copy operations failed")
