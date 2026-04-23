@@ -1,10 +1,17 @@
 # S3 Copy Machine
 
-A Scala application that reads S3 copy instructions from a CSV file and performs bulk S3 object copies using the MultipartUploader.
+A Scala application that performs bulk S3 operations based on CSV instructions. Supports multiple operation types including copy, delete, list, and validation.
 
 ## Overview
 
-This application allows you to perform bulk S3 copy operations by providing a CSV file with source and destination information. It uses the existing `MultipartUploader` class which automatically:
+This application allows you to perform bulk S3 operations by providing a CSV file with operation instructions. It supports four operation types:
+
+- **COPY**: Copy objects between buckets using the `MultipartUploader` (automatic single-part or multipart for files ≥5GB)
+- **DELETE**: Delete objects with soft delete (delete marker) or permanent delete (with version ID)
+- **LIST**: Get comprehensive object information including all versions, delete markers, and checksums
+- **KEEP**: Validate that important objects exist
+
+The COPY operation uses the existing `MultipartUploader` class which automatically:
 - Detects object size and chooses between single-part or multi-part copy
 - Handles large files (>5GB) using multi-part copy operations
 - Calculates SHA256 checksums
@@ -39,20 +46,52 @@ The CSV file must have a header row with the following columns:
 
 | Column Name | Required | Description |
 |-------------|----------|-------------|
+| `operation` | Yes | S3 operation to perform: `COPY`, `DELETE`, `LIST`, or `KEEP` |
 | `source_bucket` | Yes | Source S3 bucket name |
 | `source_key` | Yes | Source S3 object key (path) |
 | `source_version_id` | No | Source S3 version ID (leave empty if not needed) |
-| `destination_bucket` | Yes | Destination S3 bucket name |
-| `destination_key` | Yes | Destination S3 object key (path) |
+| `destination_bucket` | COPY only | Destination S3 bucket name (required for COPY operations) |
+| `destination_key` | COPY only | Destination S3 object key (required for COPY operations) |
+
+### Supported Operations
+
+#### COPY
+Copies an object from source to destination. Automatically detects object size and uses single-part copy (<5GB) or multipart copy (≥5GB).
+
+**Required fields**: `operation`, `source_bucket`, `source_key`, `destination_bucket`, `destination_key`
+
+#### DELETE
+Deletes an S3 object.
+- **Without `source_version_id`**: Performs a "soft delete" by adding a delete marker (object can be recovered)
+- **With `source_version_id`**: Performs a permanent delete of the specific version
+
+**Required fields**: `operation`, `source_bucket`, `source_key`
+
+#### LIST
+Lists all attributes, versions, delete markers, and checksums for an S3 object. Provides detailed information including:
+- Object size, last modified date, ETag
+- All version IDs and their metadata
+- Delete markers
+- Checksums (SHA256, SHA1, CRC32, CRC32C)
+- Storage class
+
+**Required fields**: `operation`, `source_bucket`, `source_key`
+
+#### KEEP
+Checks if an S3 object exists. Useful for validation workflows to ensure important objects are present.
+
+**Required fields**: `operation`, `source_bucket`, `source_key`
 
 ### Example CSV
 
 ```csv
-source_bucket,source_key,source_version_id,destination_bucket,destination_key
-my-source-bucket,path/to/file1.txt,,my-dest-bucket,new/path/file1.txt
-my-source-bucket,path/to/file2.txt,abc123xyz456,my-dest-bucket,new/path/file2.txt
-my-source-bucket,data/file3.dat,,my-dest-bucket,backup/file3.dat
-source-bucket-2,documents/doc.pdf,v1234567890,target-bucket,archive/doc.pdf
+operation,source_bucket,source_key,source_version_id,destination_bucket,destination_key
+COPY,my-source-bucket,path/to/file1.txt,,my-dest-bucket,new/path/file1.txt
+COPY,my-source-bucket,path/to/file2.txt,abc123xyz456,my-dest-bucket,new/path/file2.txt
+DELETE,my-source-bucket,path/to/old-file.txt,,,
+DELETE,my-source-bucket,path/to/specific-version.txt,version123,,
+LIST,my-source-bucket,data/file3.dat,,,
+KEEP,source-bucket-2,documents/important.pdf,,,
 ```
 
 See `example-copy-requests.csv` for a complete example.
