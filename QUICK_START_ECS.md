@@ -4,7 +4,7 @@ This is a quick reference for deploying the S3 Copy Machine to ECS Fargate.
 
 For detailed documentation, see [ECS_FARGATE_DEPLOYMENT.md](ECS_FARGATE_DEPLOYMENT.md).
 
-**💡 Tip**: Test locally first using `./run-s3-copy.sh --csv your-file.csv` before deploying to ECS. See [S3_COPY_MACHINE.md](S3_COPY_MACHINE.md) for local execution options.
+**💡 Tip**: Test locally first using `./run-s3-ops.sh --csv your-file.csv` before deploying to ECS. See [S3_COPY_MACHINE.md](S3_COPY_MACHINE.md) for local execution options.
 
 ## Prerequisites
 
@@ -20,10 +20,10 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 
 ```bash
 # Build and push to Docker Hub
-./scripts/build-csv-s3-copy-image.sh push latest
+./scripts/build-csv-s3-ops-image.sh push latest
 
 # This will prompt for your Docker Hub password
-# The image will be: pennsieve/s3-copy-machine:latest
+# The image will be: pennsieve/s3-ops-machine:latest
 ```
 
 ### Option B: ECR (Alternative)
@@ -34,11 +34,11 @@ export ECR_REGISTRY=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
 
 # Create ECR repository
 aws ecr create-repository \
-    --repository-name s3-copy-machine \
+    --repository-name s3-ops-machine \
     --region $AWS_REGION
 
 # Build and push to ECR
-./scripts/build-csv-s3-copy-image.sh push-ecr latest
+./scripts/build-csv-s3-ops-image.sh push-ecr latest
 ```
 
 ## Step 2: Create IAM Roles and Docker Hub Credentials
@@ -83,7 +83,7 @@ EOF
 
 # Create execution role
 aws iam create-role \
-    --role-name csv-s3-copy-execution-role \
+    --role-name csv-s3-ops-execution-role \
     --assume-role-policy-document file:///tmp/ecs-trust-policy.json
 
 # Create and attach policy for Docker Hub credentials and logs
@@ -112,7 +112,7 @@ cat > /tmp/execution-role-policy.json <<EOF
 EOF
 
 aws iam put-role-policy \
-    --role-name csv-s3-copy-execution-role \
+    --role-name csv-s3-ops-execution-role \
     --policy-name execution-policy \
     --policy-document file:///tmp/execution-role-policy.json
 ```
@@ -124,7 +124,7 @@ aws iam put-role-policy \
 ```bash
 # Create task role
 aws iam create-role \
-    --role-name csv-s3-copy-task-role \
+    --role-name csv-s3-ops-task-role \
     --assume-role-policy-document file:///tmp/ecs-trust-policy.json
 
 # Create and attach S3 policy
@@ -147,7 +147,7 @@ cat > /tmp/s3-policy.json <<EOF
 EOF
 
 aws iam put-role-policy \
-    --role-name csv-s3-copy-task-role \
+    --role-name csv-s3-ops-task-role \
     --policy-name s3-access \
     --policy-document file:///tmp/s3-policy.json
 ```
@@ -160,16 +160,16 @@ aws iam put-role-policy \
 # Create task definition with Docker Hub credentials
 cat > /tmp/task-definition.json <<EOF
 {
-  "family": "csv-s3-copy",
+  "family": "csv-s3-ops",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
   "memory": "2048",
-  "executionRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-execution-role",
-  "taskRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-task-role",
+  "executionRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-ops-execution-role",
+  "taskRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-ops-task-role",
   "containerDefinitions": [{
-    "name": "csv-s3-copy",
-    "image": "pennsieve/s3-copy-machine:latest",
+    "name": "csv-s3-ops",
+    "image": "pennsieve/s3-ops-machine:latest",
     "repositoryCredentials": {
       "credentialsParameter": "$DOCKER_HUB_CREDENTIALS_ARN"
     },
@@ -180,9 +180,9 @@ cat > /tmp/task-definition.json <<EOF
     "logConfiguration": {
       "logDriver": "awslogs",
       "options": {
-        "awslogs-group": "/ecs/csv-s3-copy",
+        "awslogs-group": "/ecs/csv-s3-ops",
         "awslogs-region": "$AWS_REGION",
-        "awslogs-stream-prefix": "csv-s3-copy",
+        "awslogs-stream-prefix": "csv-s3-ops",
         "awslogs-create-group": "true"
       }
     }
@@ -202,16 +202,16 @@ If your Docker Hub repository is public, you can omit the `repositoryCredentials
 ```bash
 cat > /tmp/task-definition.json <<EOF
 {
-  "family": "csv-s3-copy",
+  "family": "csv-s3-ops",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
   "memory": "2048",
-  "executionRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-execution-role",
-  "taskRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-copy-task-role",
+  "executionRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-ops-execution-role",
+  "taskRoleArn": "arn:aws:iam::$AWS_ACCOUNT_ID:role/csv-s3-ops-task-role",
   "containerDefinitions": [{
-    "name": "csv-s3-copy",
-    "image": "pennsieve/s3-copy-machine:latest",
+    "name": "csv-s3-ops",
+    "image": "pennsieve/s3-ops-machine:latest",
     "essential": true,
     "environment": [
       {"name": "AWS_REGION", "value": "$AWS_REGION"}
@@ -219,9 +219,9 @@ cat > /tmp/task-definition.json <<EOF
     "logConfiguration": {
       "logDriver": "awslogs",
       "options": {
-        "awslogs-group": "/ecs/csv-s3-copy",
+        "awslogs-group": "/ecs/csv-s3-ops",
         "awslogs-region": "$AWS_REGION",
-        "awslogs-stream-prefix": "csv-s3-copy",
+        "awslogs-stream-prefix": "csv-s3-ops",
         "awslogs-create-group": "true"
       }
     }
@@ -244,7 +244,7 @@ export SECURITY_GROUP=sg-xxxxxxxx
 aws ecs run-task \
     --cluster default \
     --launch-type FARGATE \
-    --task-definition csv-s3-copy \
+    --task-definition csv-s3-ops \
     --network-configuration "awsvpcConfiguration={
         subnets=[$VPC_SUBNET],
         securityGroups=[$SECURITY_GROUP],
@@ -252,7 +252,7 @@ aws ecs run-task \
     }" \
     --overrides '{
         "containerOverrides": [{
-            "name": "csv-s3-copy",
+            "name": "csv-s3-ops",
             "environment": [
                 {"name": "CSV_FILE_PATH", "value": "s3://my-bucket/copy-requests.csv"},
                 {"name": "PARALLELISM", "value": "5"}
@@ -268,9 +268,9 @@ aws ecs run-task \
 # View logs (replace TASK_ID with your task ID from run-task output)
 TASK_ID=abc123...
 
-aws logs tail /ecs/csv-s3-copy \
+aws logs tail /ecs/csv-s3-ops \
     --follow \
-    --log-stream-name-prefix csv-s3-copy/csv-s3-copy/$TASK_ID \
+    --log-stream-name-prefix csv-s3-ops/csv-s3-ops/$TASK_ID \
     --region $AWS_REGION
 ```
 
@@ -282,11 +282,11 @@ aws logs tail /ecs/csv-s3-copy \
 aws ecs run-task \
     --cluster default \
     --launch-type FARGATE \
-    --task-definition csv-s3-copy \
+    --task-definition csv-s3-ops \
     --network-configuration "awsvpcConfiguration={...}" \
     --overrides '{
         "containerOverrides": [{
-            "name": "csv-s3-copy",
+            "name": "csv-s3-ops",
             "environment": [
                 {"name": "CSV_FILE_PATH", "value": "s3://config-bucket/one-time-copy.csv"}
             ]
@@ -310,7 +310,7 @@ aws events put-targets \
         "Arn": "arn:aws:ecs:us-east-1:'$AWS_ACCOUNT_ID':cluster/default",
         "RoleArn": "arn:aws:iam::'$AWS_ACCOUNT_ID':role/ecsEventsRole",
         "EcsParameters": {
-            "TaskDefinitionArn": "arn:aws:ecs:us-east-1:'$AWS_ACCOUNT_ID':task-definition/csv-s3-copy",
+            "TaskDefinitionArn": "arn:aws:ecs:us-east-1:'$AWS_ACCOUNT_ID':task-definition/csv-s3-ops",
             "LaunchType": "FARGATE",
             "NetworkConfiguration": {
                 "awsvpcConfiguration": {
@@ -341,7 +341,7 @@ def lambda_handler(event, context):
     response = ecs.run_task(
         cluster='default',
         launchType='FARGATE',
-        taskDefinition='csv-s3-copy',
+        taskDefinition='csv-s3-ops',
         networkConfiguration={
             'awsvpcConfiguration': {
                 'subnets': ['subnet-xxxxxxxx'],
@@ -351,7 +351,7 @@ def lambda_handler(event, context):
         },
         overrides={
             'containerOverrides': [{
-                'name': 'csv-s3-copy',
+                'name': 'csv-s3-ops',
                 'environment': [
                     {'name': 'CSV_FILE_PATH', 'value': f's3://{bucket}/{key}'}
                 ]
@@ -370,7 +370,7 @@ def lambda_handler(event, context):
 - Check security group allows outbound HTTPS
 
 ### Task runs but fails
-- View CloudWatch Logs: `/ecs/csv-s3-copy`
+- View CloudWatch Logs: `/ecs/csv-s3-ops`
 - Verify task role has S3 permissions
 - Check CSV file path is correct
 
@@ -393,20 +393,20 @@ Update CPU/memory in task definition:
 
 ```bash
 # Stop running tasks
-aws ecs list-tasks --cluster default --family csv-s3-copy --query 'taskArns[]' --output text | \
+aws ecs list-tasks --cluster default --family csv-s3-ops --query 'taskArns[]' --output text | \
     xargs -I {} aws ecs stop-task --cluster default --task {}
 
 # Deregister task definition (all revisions)
-for rev in $(aws ecs list-task-definitions --family-prefix csv-s3-copy --query 'taskDefinitionArns[]' --output text); do
+for rev in $(aws ecs list-task-definitions --family-prefix csv-s3-ops --query 'taskDefinitionArns[]' --output text); do
     aws ecs deregister-task-definition --task-definition $rev
 done
 
 # Delete ECR repository
-aws ecr delete-repository --repository-name csv-s3-copy --force
+aws ecr delete-repository --repository-name csv-s3-ops --force
 
 # Delete IAM roles
-aws iam delete-role-policy --role-name csv-s3-copy-task-role --policy-name s3-access
-aws iam delete-role --role-name csv-s3-copy-task-role
-aws iam detach-role-policy --role-name csv-s3-copy-execution-role --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
-aws iam delete-role --role-name csv-s3-copy-execution-role
+aws iam delete-role-policy --role-name csv-s3-ops-task-role --policy-name s3-access
+aws iam delete-role --role-name csv-s3-ops-task-role
+aws iam detach-role-policy --role-name csv-s3-ops-execution-role --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+aws iam delete-role --role-name csv-s3-ops-execution-role
 ```

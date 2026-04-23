@@ -21,13 +21,13 @@ The COPY operation uses the existing `MultipartUploader` class which automatical
 
 ```bash
 # Run locally with sbt
-./run-s3-copy.sh --csv example-copy-requests.csv
+./run-s3-ops.sh --csv example-operation-requests.csv
 
 # Run with Docker
-./run-s3-copy.sh --method docker --csv example-copy-requests.csv
+./run-s3-ops.sh --method docker --csv example-operation-requests.csv
 
 # Run with S3 CSV file and custom parallelism
-./run-s3-copy.sh --csv s3://my-bucket/copy-list.csv --parallelism 5
+./run-s3-ops.sh --csv s3://my-bucket/copy-list.csv --parallelism 5
 ```
 
 See the full [Running the Application](#running-the-application) section for more options.
@@ -94,7 +94,7 @@ LIST,my-source-bucket,data/file3.dat,,,
 KEEP,source-bucket-2,documents/important.pdf,,,
 ```
 
-See `example-copy-requests.csv` for a complete example.
+See `example-operation-requests.csv` for a complete example.
 
 ## Building the Application
 
@@ -107,15 +107,15 @@ sbt assembly  # Creates a fat JAR
 
 ```bash
 # Build Docker image for S3 Copy Machine
-./scripts/build-csv-s3-copy-image.sh
+./scripts/build-csv-s3-ops-image.sh
 
-# Build and push to Docker Hub as pennsieve/s3-copy-machine (recommended)
-./scripts/build-csv-s3-copy-image.sh push latest
+# Build and push to Docker Hub as pennsieve/s3-ops-machine (recommended)
+./scripts/build-csv-s3-ops-image.sh push latest
 
 # Or build and push to ECR (alternative)
 export ECR_REGISTRY=<your-account-id>.dkr.ecr.us-east-1.amazonaws.com
 export AWS_REGION=us-east-1
-./scripts/build-csv-s3-copy-image.sh push-ecr latest
+./scripts/build-csv-s3-ops-image.sh push-ecr latest
 ```
 
 ## Deployment Options
@@ -153,7 +153,7 @@ docker run \
   -e AWS_SECRET_ACCESS_KEY=<secret> \
   -e AWS_REGION=us-east-1 \
   -v /local/path:/data \
-  pennsieve/s3-copy-machine:latest
+  pennsieve/s3-ops-machine:latest
 
 # Run with S3 CSV file
 docker run \
@@ -161,7 +161,7 @@ docker run \
   -e AWS_ACCESS_KEY_ID=<key> \
   -e AWS_SECRET_ACCESS_KEY=<secret> \
   -e AWS_REGION=us-east-1 \
-  pennsieve/s3-copy-machine:latest
+  pennsieve/s3-ops-machine:latest
 ```
 
 ## Configuration
@@ -178,25 +178,25 @@ This allows you to set defaults via environment variables and override them with
 
 ### Quick Start: Using the Convenience Script (Recommended)
 
-The easiest way to run the tool is using the provided `run-s3-copy.sh` script:
+The easiest way to run the tool is using the provided `run-s3-ops.sh` script:
 
 ```bash
 # Run with sbt (local development)
-./run-s3-copy.sh --csv example-copy-requests.csv
+./run-s3-ops.sh --csv example-operation-requests.csv
 
 # Run with Docker
-./run-s3-copy.sh --method docker --csv s3://my-bucket/copy-list.csv
+./run-s3-ops.sh --method docker --csv s3://my-bucket/copy-list.csv
 
 # Run with options
-./run-s3-copy.sh --csv example.csv --parallelism 5 --region us-west-2
+./run-s3-ops.sh --csv example.csv --parallelism 5 --region us-west-2
 
 # Use environment variables
 export CSV_FILE_PATH=s3://bucket/file.csv
 export PARALLELISM=10
-./run-s3-copy.sh
+./run-s3-ops.sh
 
 # Get help
-./run-s3-copy.sh --help
+./run-s3-ops.sh --help
 ```
 
 **Features:**
@@ -213,23 +213,23 @@ If you prefer to use sbt directly:
 
 ```bash
 # With local file
-sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv /path/to/your/file.csv"
+sbt "runMain com.pennsieve.publish.CsvS3OpsMain --csv /path/to/your/file.csv"
 
 # With S3 URI
-sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv s3://my-bucket/path/to/file.csv"
+sbt "runMain com.pennsieve.publish.CsvS3OpsMain --csv s3://my-bucket/path/to/file.csv"
 
 # Using environment variables
 export CSV_FILE_PATH=/path/to/your/file.csv
 export AWS_REGION=us-west-2
 export PARALLELISM=3
-sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
+sbt "runMain com.pennsieve.publish.CsvS3OpsMain"
 ```
 
 ### Using the assembled JAR
 
 ```bash
 java -cp target/scala-2.13/discover-publish-assembly-*.jar \
-  com.pennsieve.publish.CsvS3CopyMain \
+  com.pennsieve.publish.CsvS3OpsMain \
   --csv /path/to/your/file.csv
 ```
 
@@ -241,7 +241,7 @@ export CSV_FILE_PATH=/path/to/default.csv
 export PARALLELISM=5
 
 # Override specific settings with command-line arguments
-sbt "runMain com.pennsieve.publish.CsvS3CopyMain --parallelism 10"
+sbt "runMain com.pennsieve.publish.CsvS3OpsMain --parallelism 10"
 # This will use /path/to/default.csv but with parallelism of 10
 ```
 
@@ -290,8 +290,8 @@ All configuration options can be set via environment variables:
 ### Using command-line arguments
 
 ```bash
-sbt "runMain com.pennsieve.publish.CsvS3CopyMain \
-  --csv example-copy-requests.csv \
+sbt "runMain com.pennsieve.publish.CsvS3OpsMain \
+  --csv example-operation-requests.csv \
   --region us-east-1 \
   --maxPartSize 52428800 \
   --parallelism 3 \
@@ -301,20 +301,20 @@ sbt "runMain com.pennsieve.publish.CsvS3CopyMain \
 ### Using environment variables
 
 ```bash
-export CSV_FILE_PATH=example-copy-requests.csv
+export CSV_FILE_PATH=example-operation-requests.csv
 export AWS_REGION=us-east-1
 export MAX_PART_SIZE=52428800
 export PARALLELISM=3
 export MAX_WAIT_TIME=120m
 
-sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
+sbt "runMain com.pennsieve.publish.CsvS3OpsMain"
 ```
 
 ### Using S3 URI for CSV file
 
 ```bash
 # CSV file stored in S3
-sbt "runMain com.pennsieve.publish.CsvS3CopyMain \
+sbt "runMain com.pennsieve.publish.CsvS3OpsMain \
   --csv s3://my-config-bucket/copy-requests.csv \
   --region us-east-1 \
   --parallelism 3"
@@ -417,7 +417,7 @@ The application logs:
 
 ## Implementation Details
 
-- **Location**: `discover-publish/src/main/scala/com/pennsieve/publish/CsvS3CopyMain.scala`
+- **Location**: `discover-publish/src/main/scala/com/pennsieve/publish/CsvS3OpsMain.scala`
 - **CSV Library**: Uses `scala-csv` for robust CSV parsing
 - **S3 SDK**: Uses AWS SDK v2 for S3 operations
 - **Concurrency**: Uses Scala Futures with configurable parallelism

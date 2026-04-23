@@ -55,7 +55,7 @@ A standalone Scala application that:
 ### New Files Created
 
 #### Core Application
-- **`discover-publish/src/main/scala/com/pennsieve/publish/CsvS3CopyMain.scala`** (~620 lines)
+- **`discover-publish/src/main/scala/com/pennsieve/publish/CsvS3OpsMain.scala`** (~620 lines)
   - Main application entry point
   - CSV parsing and validation with operation type support
   - Four S3 operation executors: COPY, DELETE, LIST, KEEP
@@ -65,24 +65,24 @@ A standalone Scala application that:
   - Operation-specific validation logic
 
 #### Docker & Deployment
-- **`Dockerfile.csv-s3-copy`** (15 lines)
+- **`Dockerfile.csv-s3-ops`** (15 lines)
   - Optimized multi-stage Dockerfile
   - Uses pennsieve/openjdk:8-alpine3.9
   - Configurable main class via env var
 
-- **`discover-publish/terraform/csv-s3-copy-task-definition.json`** (81 lines)
+- **`discover-publish/terraform/csv-s3-ops-task-definition.json`** (81 lines)
   - ECS Fargate task definition template
   - Supports Docker Hub credentials
   - Configurable resources (CPU/memory)
   - Environment variable overrides
 
-- **`scripts/build-csv-s3-copy-image.sh`** (143 lines)
+- **`scripts/build-csv-s3-ops-image.sh`** (143 lines)
   - Build automation script
   - Supports Docker Hub and ECR
   - Image tagging with version support
   - Colored output and validation
 
-- **`run-s3-copy.sh`** (205 lines)
+- **`run-s3-ops.sh`** (205 lines)
   - Convenience wrapper for local execution
   - Supports sbt and docker methods
   - AWS credential handling
@@ -92,7 +92,7 @@ A standalone Scala application that:
 #### Documentation
 - **`S3_COPY_MACHINE.md`** (287 lines)
   - Comprehensive user guide
-  - Quick start with run-s3-copy.sh
+  - Quick start with run-s3-ops.sh
   - CSV format specification
   - Configuration options
   - Usage examples
@@ -115,7 +115,7 @@ A standalone Scala application that:
   - Quick configuration examples
 
 #### Examples
-- **`example-copy-requests.csv`** (7 lines)
+- **`example-operation-requests.csv`** (7 lines)
   - Sample CSV file format with all operation types
   - Examples: COPY (with/without version), DELETE (soft/permanent), LIST, KEEP
 
@@ -254,7 +254,7 @@ def isS3Uri(path: String): Boolean = path.startsWith("s3://")
 
 def downloadFromS3(s3Uri: String): File = {
   val (bucket, key) = parseS3Uri(s3Uri)
-  val tmpFile = File.createTempFile("s3-copy-machine-", ".csv")
+  val tmpFile = File.createTempFile("s3-ops-machine-", ".csv")
 
   val getRequest = GetObjectRequest.builder()
     .bucket(bucket)
@@ -298,7 +298,7 @@ case class CsvCopySettings(
 )
 
 // CLI args override environment variables
-val parser = new scopt.OptionParser[CsvCopySettings]("csv-s3-copy") {
+val parser = new scopt.OptionParser[CsvCopySettings]("csv-s3-ops") {
   opt[String]("csv").action((x, c) => c.copy(csvFilePath = x))
   opt[String]("region").action((x, c) => c.copy(region = x))
   // ... etc
@@ -369,7 +369,7 @@ FROM pennsieve/openjdk:8-alpine3.9
 COPY target/scala-2.12/discover-publish.jar /app/discover-publish.jar
 
 # Set main class via environment variable
-ENV MAIN_CLASS=com.pennsieve.publish.CsvS3CopyMain
+ENV MAIN_CLASS=com.pennsieve.publish.CsvS3OpsMain
 
 # Run with configurable main class
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -cp /app/discover-publish.jar $MAIN_CLASS"]
@@ -378,16 +378,16 @@ ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -cp /app/discover-publish.jar $MAIN_CLA
 **Build Script Features:**
 ```bash
 # Build assembly JAR
-./scripts/build-csv-s3-copy-image.sh
+./scripts/build-csv-s3-ops-image.sh
 
 # Build and push to Docker Hub
-./scripts/build-csv-s3-copy-image.sh push latest
+./scripts/build-csv-s3-ops-image.sh push latest
 
 # Build and push to ECR
-./scripts/build-csv-s3-copy-image.sh push-ecr latest
+./scripts/build-csv-s3-ops-image.sh push-ecr latest
 ```
 
-**Image Name:** `pennsieve/s3-copy-machine:latest`
+**Image Name:** `pennsieve/s3-ops-machine:latest`
 
 ### 6. ECS Fargate Deployment
 
@@ -408,14 +408,14 @@ ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -cp /app/discover-publish.jar $MAIN_CLA
 aws ecs run-task \
   --cluster my-cluster \
   --launch-type FARGATE \
-  --task-definition csv-s3-copy:1 \
+  --task-definition csv-s3-ops:1 \
   --network-configuration "awsvpcConfiguration={
     subnets=[subnet-123],
     assignPublicIp=ENABLED
   }" \
   --overrides '{
     "containerOverrides": [{
-      "name": "csv-s3-copy",
+      "name": "csv-s3-ops",
       "environment": [
         {"name": "CSV_FILE_PATH", "value": "s3://bucket/file.csv"},
         {"name": "PARALLELISM", "value": "5"}
@@ -426,7 +426,7 @@ aws ecs run-task \
 
 ### 7. Local Execution Convenience
 
-**run-s3-copy.sh Features:**
+**run-s3-ops.sh Features:**
 - Method selection: `sbt` or `docker`
 - Automatic AWS credential detection and passing
 - Local file mounting for Docker
@@ -437,13 +437,13 @@ aws ecs run-task \
 **Usage:**
 ```bash
 # Using sbt (development)
-./run-s3-copy.sh --csv example-copy-requests.csv --method sbt
+./run-s3-ops.sh --csv example-operation-requests.csv --method sbt
 
 # Using docker (production-like)
-./run-s3-copy.sh --csv example-copy-requests.csv --method docker --parallelism 5
+./run-s3-ops.sh --csv example-operation-requests.csv --method docker --parallelism 5
 
 # With S3 CSV file
-./run-s3-copy.sh --csv s3://bucket/file.csv --region us-west-2
+./run-s3-ops.sh --csv s3://bucket/file.csv --region us-west-2
 ```
 
 ## Use Cases
@@ -452,7 +452,7 @@ aws ecs run-task \
 ```bash
 # Create CSV with COPY operations for source→destination mappings
 # Run locally or as ECS task
-./run-s3-copy.sh --csv migration-list.csv --parallelism 10
+./run-s3-ops.sh --csv migration-list.csv --parallelism 10
 ```
 
 ### 2. Scheduled Backups with Cleanup
@@ -507,7 +507,7 @@ aws ecs run-task \
 
 **Test 1: Valid CSV with Multiple Operations**
 ```scala
-// Input: example-copy-requests.csv with COPY, DELETE, LIST, and KEEP operations
+// Input: example-operation-requests.csv with COPY, DELETE, LIST, and KEEP operations
 // Expected: All operations complete successfully with appropriate outputs
 // Result: ✅ PASS
 ```
@@ -710,7 +710,7 @@ with open('old-file.csv') as infile, open('new-file.csv', 'w') as outfile:
 - No impact on existing discover-publish functionality
 - New files in separate directory structure
 - Optional dependency (`scala-csv`) only loaded when using this tool
-- Docker image name remains `pennsieve/s3-copy-machine`
+- Docker image name remains `pennsieve/s3-ops-machine`
 
 **⚠️ Breaking Change:** CSV format now requires `operation` column (see Migration section)
 
@@ -718,7 +718,7 @@ with open('old-file.csv') as infile, open('new-file.csv', 'w') as outfile:
 
 ### Phase 1: Merge and Tag
 1. Merge PR to main
-2. Build and push Docker image: `pennsieve/s3-copy-machine:latest`
+2. Build and push Docker image: `pennsieve/s3-ops-machine:latest`
 3. Tag specific version: `pennsieve/s3-operations-machine:v2.0.0`
 
 ### Phase 2: Deploy to Non-Prod
@@ -740,7 +740,7 @@ with open('old-file.csv') as infile, open('new-file.csv', 'w') as outfile:
 - ✅ `S3_COPY_MACHINE.md` - Main user guide with all operation types
 - ✅ `ECS_FARGATE_DEPLOYMENT.md` - Deployment guide
 - ✅ `QUICK_START_ECS.md` - Quick reference
-- ✅ `example-copy-requests.csv` - Sample CSV with COPY, DELETE, LIST, and KEEP examples
+- ✅ `example-operation-requests.csv` - Sample CSV with COPY, DELETE, LIST, and KEEP examples
 
 ### Code Documentation
 - ✅ Inline comments for complex logic
@@ -777,23 +777,23 @@ Potential improvements for follow-up PRs:
 - [x] Manual testing completed for all operation types
 - [x] Breaking changes documented with migration path
 - [x] Dependency added to build.sbt
-- [x] Go implementation also updated (s3-copy-machine-go repository)
+- [x] Go implementation also updated (s3-ops-machine-go repository)
 
 ## Files Changed
 
 ```
  build.sbt                                          |   1 +
- Dockerfile.csv-s3-copy                             |  15 +
+ Dockerfile.csv-s3-ops                             |  15 +
  ECS_FARGATE_DEPLOYMENT.md                          | 485 +++++++++++++++++++++
  QUICK_START_ECS.md                                 | 143 +++++++
  S3_COPY_MACHINE.md                                 | 287 +++++++++++++
  discover-publish/terraform/
-   csv-s3-copy-task-definition.json                 |  81 ++++
- example-copy-requests.csv                          |   4 +
- run-s3-copy.sh                                     | 205 +++++++++
- scripts/build-csv-s3-copy-image.sh                 | 143 +++++++
+   csv-s3-ops-task-definition.json                 |  81 ++++
+ example-operation-requests.csv                          |   4 +
+ run-s3-ops.sh                                     | 205 +++++++++
+ scripts/build-csv-s3-ops-image.sh                 | 143 +++++++
  src/main/scala/com/pennsieve/publish/
-   CsvS3CopyMain.scala                              | 361 ++++++++++++++++
+   CsvS3OpsMain.scala                              | 361 ++++++++++++++++
  10 files changed, 1725 insertions(+)
 ```
 

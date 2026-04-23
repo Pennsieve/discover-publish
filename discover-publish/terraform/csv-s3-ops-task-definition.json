@@ -1,5 +1,5 @@
 {
-  "family": "csv-s3-copy",
+  "family": "csv-s3-ops",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "1024",
@@ -8,8 +8,8 @@
   "taskRoleArn": "${task_role_arn}",
   "containerDefinitions": [
     {
-      "name": "csv-s3-copy",
-      "image": "pennsieve/s3-copy-machine:${image_tag}",
+      "name": "csv-s3-ops",
+      "image": "pennsieve/s3-ops-machine:${image_tag}",
       "repositoryCredentials": {
         "credentialsParameter": "${docker_hub_credentials_arn}"
       },
@@ -26,7 +26,7 @@
         "options": {
           "awslogs-group": "${cloudwatch_log_group_name}",
           "awslogs-region": "${aws_region}",
-          "awslogs-stream-prefix": "csv-s3-copy",
+          "awslogs-stream-prefix": "csv-s3-ops",
           "awslogs-create-group": "true"
         }
       }

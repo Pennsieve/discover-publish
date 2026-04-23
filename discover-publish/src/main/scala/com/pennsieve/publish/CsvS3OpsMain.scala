@@ -41,14 +41,14 @@ import scala.concurrent.{ Await, ExecutionContext, Future }
 import scala.util.{ Failure, Success, Try }
 import java.util.concurrent.ForkJoinPool
 
-case class CsvCopySettings(
+case class CsvOpsSettings(
   csvFilePath: String = "",
-  region: Region = CsvCopySettings.DEFAULT_REGION,
-  maxPartSize: Long = CsvCopySettings.MAX_PART_SIZE,
-  maxWaitTime: Duration = CsvCopySettings.MAX_WAIT_TIME,
-  parallelism: Int = CsvCopySettings.DEFAULT_PARALLELISM
+  region: Region = CsvOpsSettings.DEFAULT_REGION,
+  maxPartSize: Long = CsvOpsSettings.MAX_PART_SIZE,
+  maxWaitTime: Duration = CsvOpsSettings.MAX_WAIT_TIME,
+  parallelism: Int = CsvOpsSettings.DEFAULT_PARALLELISM
 ) {
-  def withSetting(name: String, value: String): CsvCopySettings =
+  def withSetting(name: String, value: String): CsvOpsSettings =
     name match {
       case "--csv" =>
         this.copy(csvFilePath = value)
@@ -67,7 +67,7 @@ case class CsvCopySettings(
     }
 }
 
-object CsvCopySettings {
+object CsvOpsSettings {
   val DEFAULT_REGION: Region = Region.US_EAST_1
   val MAX_PART_SIZE: Long = 50 * 1024 * 1024 // 50 MB
   val MAX_WAIT_TIME: FiniteDuration = Duration(60, TimeUnit.MINUTES)
@@ -82,12 +82,12 @@ object CsvCopySettings {
     val PARALLELISM = "PARALLELISM"
   }
 
-  def apply(): CsvCopySettings = new CsvCopySettings()
+  def apply(): CsvOpsSettings = new CsvOpsSettings()
 
   /**
     * Load settings from environment variables
     */
-  def fromEnvironment(): CsvCopySettings = {
+  def fromEnvironment(): CsvOpsSettings = {
     val csvPath = sys.env.getOrElse(EnvVars.CSV_FILE_PATH, "")
 
     val region = sys.env.get(EnvVars.AWS_REGION) match {
@@ -114,7 +114,7 @@ object CsvCopySettings {
       case _ => DEFAULT_PARALLELISM
     }
 
-    CsvCopySettings(
+    CsvOpsSettings(
       csvFilePath = csvPath,
       region = region,
       maxPartSize = maxPartSize,
@@ -129,8 +129,8 @@ object CsvCopySettings {
     */
   def fromArgs(
     args: List[String],
-    settings: CsvCopySettings
-  ): CsvCopySettings = {
+    settings: CsvOpsSettings
+  ): CsvOpsSettings = {
     args match {
       case h :: t if t.nonEmpty =>
         fromArgs(t.drop(1), settings.withSetting(h, t.head))
@@ -140,7 +140,7 @@ object CsvCopySettings {
   }
 }
 
-object CsvS3CopyMain extends LazyLogging {
+object CsvS3OpsMain extends LazyLogging {
 
   /**
     * Column names expected in the CSV file
@@ -660,7 +660,7 @@ object CsvS3CopyMain extends LazyLogging {
     requests: List[S3OperationRequest],
     client: S3Client,
     uploader: MultipartUploader,
-    settings: CsvCopySettings
+    settings: CsvOpsSettings
   )(implicit
     ec: ExecutionContext
   ): Future[List[Either[Throwable, String]]] = {
@@ -709,7 +709,7 @@ object CsvS3CopyMain extends LazyLogging {
   def printUsage(): Unit = {
     println(
       """
-      |Usage: CsvS3CopyMain --csv <path-to-csv> [options]
+      |Usage: CsvS3OpsMain --csv <path-to-csv> [options]
       |
       |Configuration Priority (highest to lowest):
       |  1. Command line arguments
@@ -765,16 +765,16 @@ object CsvS3CopyMain extends LazyLogging {
       |  export CSV_FILE_PATH=/path/to/file.csv
       |  export AWS_REGION=us-west-2
       |  export PARALLELISM=3
-      |  sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
+      |  sbt "runMain com.pennsieve.publish.CsvS3OpsMain"
       |
       |Example with S3 URI:
-      |  sbt "runMain com.pennsieve.publish.CsvS3CopyMain --csv s3://my-bucket/path/to/file.csv"
+      |  sbt "runMain com.pennsieve.publish.CsvS3OpsMain --csv s3://my-bucket/path/to/file.csv"
       |""".stripMargin
     )
   }
 
   def main(args: Array[String]): Unit = {
-    logger.info("CsvS3CopyMain starting")
+    logger.info("CsvS3OpsMain starting")
 
     if (args.contains("--help") || args.contains("-h")) {
       printUsage()
@@ -782,8 +782,8 @@ object CsvS3CopyMain extends LazyLogging {
     }
 
     // Load settings: environment variables first, then override with command line args
-    val envSettings = CsvCopySettings.fromEnvironment()
-    val settings = CsvCopySettings.fromArgs(args.toList, envSettings)
+    val envSettings = CsvOpsSettings.fromEnvironment()
+    val settings = CsvOpsSettings.fromArgs(args.toList, envSettings)
 
     if (settings.csvFilePath.isEmpty) {
       logger.error(

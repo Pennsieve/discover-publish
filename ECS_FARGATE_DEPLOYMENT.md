@@ -31,12 +31,12 @@ CSV File (S3 or Local) → ECS Fargate Task → S3 Copy Operations → Destinati
 
 ```bash
 # Build and push in one command
-./scripts/build-csv-s3-copy-image.sh push latest
+./scripts/build-csv-s3-ops-image.sh push latest
 
 # This will:
 # 1. Build the assembly JAR
 # 2. Build the Docker image
-# 3. Tag it as: pennsieve/s3-copy-machine:latest
+# 3. Tag it as: pennsieve/s3-ops-machine:latest
 # 4. Prompt for Docker Hub login
 # 5. Push to Docker Hub
 ```
@@ -53,10 +53,10 @@ export ECR_REGISTRY=<account-id>.dkr.ecr.us-east-1.amazonaws.com
 export AWS_REGION=us-east-1
 
 # Create ECR repository (if not exists)
-aws ecr create-repository --repository-name s3-copy-machine --region $AWS_REGION
+aws ecr create-repository --repository-name s3-ops-machine --region $AWS_REGION
 
 # Build and push to ECR
-./scripts/build-csv-s3-copy-image.sh push-ecr latest
+./scripts/build-csv-s3-ops-image.sh push-ecr latest
 ```
 
 ## Step 2: Create IAM Roles and Docker Hub Credentials
@@ -154,13 +154,13 @@ This role allows the application to access S3 buckets.
 
 ## Step 3: Create Task Definition
 
-Use the provided task definition template at `discover-publish/terraform/csv-s3-copy-task-definition.json`.
+Use the provided task definition template at `discover-publish/terraform/csv-s3-ops-task-definition.json`.
 
 ### Register Task Definition via AWS CLI
 
 ```bash
 aws ecs register-task-definition \
-  --cli-input-json file://discover-publish/terraform/csv-s3-copy-task-definition.json \
+  --cli-input-json file://discover-publish/terraform/csv-s3-ops-task-definition.json \
   --region us-east-1
 ```
 
@@ -184,14 +184,14 @@ resource "aws_secretsmanager_secret_version" "docker_hub_credentials" {
 }
 
 data "template_file" "csv_s3_copy_task_definition" {
-  template = file("${path.module}/csv-s3-copy-task-definition.json")
+  template = file("${path.module}/csv-s3-ops-task-definition.json")
 
   vars = {
     image_tag                    = var.image_tag
     docker_hub_credentials_arn   = aws_secretsmanager_secret.docker_hub_credentials.arn
     execution_role_arn           = aws_iam_role.ecs_execution_role.arn
     task_role_arn                = aws_iam_role.csv_s3_copy_task_role.arn
-    cloudwatch_log_group_name    = "/ecs/csv-s3-copy"
+    cloudwatch_log_group_name    = "/ecs/csv-s3-ops"
     aws_region                   = var.aws_region
     csv_file_path                = var.csv_file_path
     parallelism                  = var.parallelism
@@ -201,7 +201,7 @@ data "template_file" "csv_s3_copy_task_definition" {
 }
 
 resource "aws_ecs_task_definition" "csv_s3_copy" {
-  family                   = "csv-s3-copy"
+  family                   = "csv-s3-ops"
   network_mode             = "awsvpc"
   requires_compatibilities = ["FARGATE"]
   cpu                      = "1024"
@@ -223,7 +223,7 @@ resource "aws_ecs_task_definition" "csv_s3_copy" {
 aws ecs run-task \
   --cluster your-ecs-cluster \
   --launch-type FARGATE \
-  --task-definition csv-s3-copy:1 \
+  --task-definition csv-s3-ops:1 \
   --network-configuration "awsvpcConfiguration={
     subnets=[subnet-12345678],
     securityGroups=[sg-12345678],
@@ -231,7 +231,7 @@ aws ecs run-task \
   }" \
   --overrides '{
     "containerOverrides": [{
-      "name": "csv-s3-copy",
+      "name": "csv-s3-ops",
       "environment": [
         {"name": "CSV_FILE_PATH", "value": "s3://my-bucket/copy-list.csv"},
         {"name": "AWS_REGION", "value": "us-east-1"},
@@ -249,7 +249,7 @@ aws ecs run-task \
 3. Click **Tasks** → **Run new Task**
 4. Choose:
    - **Launch type**: Fargate
-   - **Task Definition**: csv-s3-copy
+   - **Task Definition**: csv-s3-ops
    - **VPC and Subnets**: Select appropriate subnets
    - **Security Groups**: Allow outbound HTTPS (443)
 5. Under **Container Overrides**, set environment variables:
@@ -272,7 +272,7 @@ You can orchestrate the CSV S3 copy task from Step Functions:
       "Parameters": {
         "LaunchType": "FARGATE",
         "Cluster": "arn:aws:ecs:us-east-1:123456789012:cluster/your-cluster",
-        "TaskDefinition": "csv-s3-copy",
+        "TaskDefinition": "csv-s3-ops",
         "NetworkConfiguration": {
           "AwsvpcConfiguration": {
             "Subnets": ["subnet-12345678"],
@@ -283,7 +283,7 @@ You can orchestrate the CSV S3 copy task from Step Functions:
         "Overrides": {
           "ContainerOverrides": [
             {
-              "Name": "csv-s3-copy",
+              "Name": "csv-s3-ops",
               "Environment": [
                 {
                   "Name": "CSV_FILE_PATH",
@@ -316,8 +316,8 @@ TASK_ARN="arn:aws:ecs:us-east-1:123456789012:task/your-cluster/abc123..."
 TASK_ID=$(echo $TASK_ARN | awk -F/ '{print $NF}')
 
 # View logs
-aws logs tail /ecs/csv-s3-copy --follow \
-  --log-stream-name-prefix csv-s3-copy/csv-s3-copy/$TASK_ID
+aws logs tail /ecs/csv-s3-ops --follow \
+  --log-stream-name-prefix csv-s3-ops/csv-s3-ops/$TASK_ID
 ```
 
 ### Check Task Status
@@ -408,12 +408,12 @@ Example cost for 1 vCPU, 2GB task running for 30 minutes:
 
 ```hcl
 module "csv_s3_copy" {
-  source = "./modules/csv-s3-copy"
+  source = "./modules/csv-s3-ops"
 
   cluster_name              = "production"
   vpc_id                    = aws_vpc.main.id
   private_subnet_ids        = aws_subnet.private[*].id
-  csv_s3_copy_image         = "pennsieve/s3-copy-machine:latest"
+  csv_s3_copy_image         = "pennsieve/s3-ops-machine:latest"
   source_buckets            = ["source-bucket-1", "source-bucket-2"]
   destination_buckets       = ["destination-bucket-1"]
   csv_config_buckets        = ["config-bucket"]
@@ -463,13 +463,13 @@ jobs:
         run: |
           sbt assembly
           sbt docker
-          docker tag pennsieve/s3-copy-machine:latest ${{ secrets.ECR_REGISTRY }}/s3-copy-machine:${{ github.sha }}
-          docker push ${{ secrets.ECR_REGISTRY }}/s3-copy-machine:${{ github.sha }}
+          docker tag pennsieve/s3-ops-machine:latest ${{ secrets.ECR_REGISTRY }}/s3-ops-machine:${{ github.sha }}
+          docker push ${{ secrets.ECR_REGISTRY }}/s3-ops-machine:${{ github.sha }}
 
       - name: Update task definition
         run: |
           aws ecs register-task-definition \
-            --cli-input-json file://discover-publish/terraform/csv-s3-copy-task-definition.json
+            --cli-input-json file://discover-publish/terraform/csv-s3-ops-task-definition.json
 ```
 
 ## Summary

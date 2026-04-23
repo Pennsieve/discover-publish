@@ -14,7 +14,7 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 PARALLELISM="${PARALLELISM:-1}"
 MAX_PART_SIZE="${MAX_PART_SIZE:-52428800}"
 MAX_WAIT_TIME="${MAX_WAIT_TIME:-60m}"
-DOCKER_IMAGE="pennsieve/s3-copy-machine:latest"
+DOCKER_IMAGE="pennsieve/s3-ops-machine:latest"
 
 # Color codes for output
 RED='\033[0;31m'
@@ -39,7 +39,7 @@ ${GREEN}Options:${NC}
     --parallelism <n>         Number of parallel operations (default: 1)
     --max-part-size <bytes>   Maximum part size in bytes (default: 52428800)
     --max-wait-time <time>    Maximum wait time (e.g., "60m", "2h") (default: 60m)
-    --docker-image <image>    Docker image to use (default: pennsieve/s3-copy-machine:latest)
+    --docker-image <image>    Docker image to use (default: pennsieve/s3-ops-machine:latest)
     -h, --help                Show this help message
 
 ${GREEN}Environment Variables:${NC}
@@ -53,7 +53,7 @@ ${GREEN}Environment Variables:${NC}
 
 ${GREEN}Examples:${NC}
     # Run with sbt (local development)
-    $0 --csv example-copy-requests.csv
+    $0 --csv example-operation-requests.csv
 
     # Run with Docker
     $0 --method docker --csv s3://my-bucket/copy-list.csv
@@ -202,7 +202,7 @@ if [ "$RUN_METHOD" = "sbt" ]; then
     export MAX_WAIT_TIME
 
     # Run via sbt
-    sbt "runMain com.pennsieve.publish.CsvS3CopyMain"
+    sbt "runMain com.pennsieve.publish.CsvS3OpsMain"
 
 elif [ "$RUN_METHOD" = "docker" ]; then
     info "Running via Docker..."

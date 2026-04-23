@@ -3,9 +3,9 @@ set -e
 
 # Script to build and optionally push the CSV S3 Copy Docker image
 # Usage:
-#   ./scripts/build-csv-s3-copy-image.sh              # Build only
-#   ./scripts/build-csv-s3-copy-image.sh push [tag]   # Build and push to Docker Hub
-#   ./scripts/build-csv-s3-copy-image.sh push-ecr [tag] # Build and push to ECR
+#   ./scripts/build-csv-s3-ops-image.sh              # Build only
+#   ./scripts/build-csv-s3-ops-image.sh push [tag]   # Build and push to Docker Hub
+#   ./scripts/build-csv-s3-ops-image.sh push-ecr [tag] # Build and push to ECR
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
@@ -15,7 +15,7 @@ cd "$PROJECT_ROOT"
 PUSH_IMAGE=false
 PUSH_TO_ECR=false
 IMAGE_TAG="${2:-latest}"
-IMAGE_NAME="s3-copy-machine"
+IMAGE_NAME="s3-ops-machine"
 DOCKER_HUB_ORG="pennsieve"
 
 # Parse arguments
@@ -57,7 +57,7 @@ echo ""
 # Step 2: Build Docker image
 echo "Step 2: Building Docker image..."
 docker build \
-    -f Dockerfile.csv-s3-copy \
+    -f Dockerfile.csv-s3-ops \
     -t "$DOCKER_HUB_ORG/$IMAGE_NAME:$IMAGE_TAG" \
     .
 
@@ -127,11 +127,11 @@ else
     echo "Image: $DOCKER_HUB_ORG/$IMAGE_NAME:$IMAGE_TAG"
     echo ""
     echo "To push to Docker Hub, run:"
-    echo "  ./scripts/build-csv-s3-copy-image.sh push $IMAGE_TAG"
+    echo "  ./scripts/build-csv-s3-ops-image.sh push $IMAGE_TAG"
     echo ""
     echo "To push to ECR, run:"
     echo "  export ECR_REGISTRY=<your-ecr-registry>"
     echo "  export AWS_REGION=<your-region>"
-    echo "  ./scripts/build-csv-s3-copy-image.sh push-ecr $IMAGE_TAG"
+    echo "  ./scripts/build-csv-s3-ops-image.sh push-ecr $IMAGE_TAG"
     echo "==================================="
 fi
