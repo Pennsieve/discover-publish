@@ -9,7 +9,11 @@ set -e
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+TARGET_JAR_FILE=csv-s3-ops.jar
 cd "$PROJECT_ROOT"
+echo "SCRIPT_DIR: $SCRIPT_DIR"
+echo "PROJECT_ROOT: $PROJECT_ROOT"
+echo "TARGET_JAR_FILE: $TARGET_JAR_FILE"
 
 # Default values
 PUSH_IMAGE=false
@@ -46,23 +50,29 @@ echo "Step 1: Building assembly JAR..."
 sbt assembly
 
 # Check if assembly was successful
-if [ ! -f discover-publish/target/scala-2.13/discover-publish-assembly-*.jar ]; then
+SOURCE_JAR_FILE=`/bin/ls -1 $PROJECT_ROOT/discover-publish/target/scala-2.13/multipart-uploader-assembly-bootstrap-*.jar`
+if [ ! -f $SOURCE_JAR_FILE ]; then
     echo "ERROR: Assembly JAR not found!"
     exit 1
 fi
 
 echo "Assembly JAR built successfully"
+echo "$SOURCE_JAR_FILE"
 echo ""
+
+cp $SOURCE_JAR_FILE $TARGET_JAR_FILE
 
 # Step 2: Build Docker image
 echo "Step 2: Building Docker image..."
 docker build \
+    --build-arg JAR_FILE=$JAR_FILE \
     -f Dockerfile.csv-s3-ops \
     -t "$DOCKER_HUB_ORG/$IMAGE_NAME:$IMAGE_TAG" \
     .
 
 echo "Docker image built successfully"
 echo ""
+rm -f $TARGET_JAR_FILE
 
 # Step 3: Push image (if requested)
 if [ "$PUSH_IMAGE" == "true" ]; then

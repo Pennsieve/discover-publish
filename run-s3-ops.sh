@@ -202,7 +202,7 @@ if [ "$RUN_METHOD" = "sbt" ]; then
     export MAX_WAIT_TIME
 
     # Run via sbt
-    sbt "runMain com.pennsieve.publish.CsvS3OpsMain"
+    sbt "discover-publish/runMain com.pennsieve.publish.CsvS3OpsMain"
 
 elif [ "$RUN_METHOD" = "docker" ]; then
     info "Running via Docker..."
