@@ -746,7 +746,8 @@ object CsvS3OpsMain extends LazyLogging {
   }
 
   val ZERO_SECONDS = FiniteDuration(Duration("0 seconds").toSeconds, SECONDS)
-  val EXTENSIVE_WAIT_TIME = FiniteDuration(Duration("7 days").toSeconds, SECONDS)
+  val EXTENSIVE_WAIT_TIME =
+    FiniteDuration(Duration("7 days").toSeconds, SECONDS)
 
   def main(args: Array[String]): Unit = {
     logger.info("CsvS3OpsMain starting")
