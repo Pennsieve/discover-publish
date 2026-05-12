@@ -45,7 +45,11 @@ case class CsvOpsSettings(
   region: Region = CsvOpsSettings.DEFAULT_REGION,
   maxPartSize: Long = CsvOpsSettings.MAX_PART_SIZE,
   maxWaitTime: Duration = CsvOpsSettings.MAX_WAIT_TIME,
-  parallelism: Int = CsvOpsSettings.DEFAULT_PARALLELISM
+  parallelism: Int = CsvOpsSettings.DEFAULT_PARALLELISM,
+  operation: String = "",
+  sourceUri: String = "",
+  destinationUri: String = "",
+  sourceVersionId: String = ""
 ) {
   def withSetting(name: String, value: String): CsvOpsSettings =
     name match {
@@ -61,9 +65,21 @@ case class CsvOpsSettings(
         )
       case "--parallelism" =>
         this.copy(parallelism = value.toInt)
+      case "--operation" =>
+        this.copy(operation = value)
+      case "--source-uri" =>
+        this.copy(sourceUri = value)
+      case "--dest-uri" =>
+        this.copy(destinationUri = value)
+      case "--source-version-id" =>
+        this.copy(sourceVersionId = value)
       case _ => // ignore any unrecognized names
         this
     }
+
+  /** True when any single-file flag/env var has been provided. */
+  def isSingleFileMode: Boolean =
+    operation.nonEmpty || sourceUri.nonEmpty || destinationUri.nonEmpty
 }
 
 object CsvOpsSettings {
@@ -79,6 +95,10 @@ object CsvOpsSettings {
     val MAX_PART_SIZE = "MAX_PART_SIZE"
     val MAX_WAIT_TIME = "MAX_WAIT_TIME"
     val PARALLELISM = "PARALLELISM"
+    val S3_OPERATION = "S3_OPERATION"
+    val SOURCE_S3_URI = "SOURCE_S3_URI"
+    val DEST_S3_URI = "DEST_S3_URI"
+    val SOURCE_S3_VERSION_ID = "SOURCE_S3_VERSION_ID"
   }
 
   def apply(): CsvOpsSettings = new CsvOpsSettings()
@@ -113,12 +133,21 @@ object CsvOpsSettings {
       case _ => DEFAULT_PARALLELISM
     }
 
+    val operation = sys.env.getOrElse(EnvVars.S3_OPERATION, "")
+    val sourceUri = sys.env.getOrElse(EnvVars.SOURCE_S3_URI, "")
+    val destinationUri = sys.env.getOrElse(EnvVars.DEST_S3_URI, "")
+    val sourceVersionId = sys.env.getOrElse(EnvVars.SOURCE_S3_VERSION_ID, "")
+
     CsvOpsSettings(
       csvFilePath = csvPath,
       region = region,
       maxPartSize = maxPartSize,
       maxWaitTime = maxWaitTime,
-      parallelism = parallelism
+      parallelism = parallelism,
+      operation = operation,
+      sourceUri = sourceUri,
+      destinationUri = destinationUri,
+      sourceVersionId = sourceVersionId
     )
   }
 
@@ -688,10 +717,21 @@ object CsvS3OpsMain extends LazyLogging {
       |  2. Environment variables
       |  3. Default values
       |
-      |Required:
-      |  --csv <path>          Path to CSV file with copy instructions
-      |                        Supports local file paths and S3 URIs (s3://bucket/key)
-      |                        (or set CSV_FILE_PATH environment variable)
+      |Required (choose one mode):
+      |  CSV mode:
+      |    --csv <path>          Path to CSV file with copy instructions
+      |                          Supports local file paths and S3 URIs (s3://bucket/key)
+      |                          (or set CSV_FILE_PATH environment variable)
+      |
+      |  Single-file mode:
+      |    --operation <op>        Operation to perform: COPY, DELETE, LIST, KEEP
+      |                            (or set S3_OPERATION environment variable)
+      |    --source-uri <uri>      Source S3 URI (s3://bucket/key)
+      |                            (or set SOURCE_S3_URI environment variable)
+      |    --dest-uri <uri>        Destination S3 URI (required for COPY)
+      |                            (or set DEST_S3_URI environment variable)
+      |    --source-version-id <v> (Optional) Source S3 version ID
+      |                            (or set SOURCE_S3_VERSION_ID environment variable)
       |
       |Optional:
       |  --region <region>     AWS region (default: us-east-1)
@@ -761,12 +801,12 @@ object CsvS3OpsMain extends LazyLogging {
     val envSettings = CsvOpsSettings.fromEnvironment()
     val settings = CsvOpsSettings.fromArgs(args.toList, envSettings)
 
-    if (settings.csvFilePath.isEmpty) {
-      logger.error(
-        "CSV file path is required (use --csv or CSV_FILE_PATH environment variable)"
-      )
-      printUsage()
-      sys.exit(1)
+    validateSettings(settings) match {
+      case Left(error) =>
+        logger.error(error)
+        printUsage()
+        sys.exit(1)
+      case Right(_) =>
     }
 
     logger.info(s"Settings: $settings")
@@ -777,22 +817,25 @@ object CsvS3OpsMain extends LazyLogging {
       ExecutionContext.fromExecutor(new ForkJoinPool(settings.parallelism))
 
     try {
-      // Read and parse CSV file (supports both local paths and S3 URIs)
-      val operationRequestsEither =
-        readCsvFile(settings.csvFilePath, Some(client))
+      val operationRequestsEither: Either[String, List[S3OperationRequest]] =
+        if (settings.isSingleFileMode) {
+          buildSingleFileRequest(settings).map(List(_))
+        } else {
+          readCsvFile(settings.csvFilePath, Some(client))
+        }
 
       operationRequestsEither match {
         case Left(error) =>
-          logger.error(s"Failed to parse CSV file: $error")
+          logger.error(s"Failed to build operation requests: $error")
           sys.exit(1)
 
         case Right(operationRequests) =>
           logger.info(
-            s"Successfully parsed ${operationRequests.length} S3 operation requests"
+            s"Successfully built ${operationRequests.length} S3 operation requests"
           )
 
           if (operationRequests.isEmpty) {
-            logger.warn("No operation requests found in CSV file")
+            logger.warn("No operation requests to process")
             sys.exit(0)
           }
 
@@ -839,6 +882,69 @@ object CsvS3OpsMain extends LazyLogging {
       }
     } finally {
       client.close()
+    }
+  }
+
+  /**
+    * Validate that exactly one of CSV mode or single-file mode is configured.
+    */
+  def validateSettings(settings: CsvOpsSettings): Either[String, Unit] = {
+    val hasCsv = settings.csvFilePath.nonEmpty
+    val hasSingle = settings.isSingleFileMode
+    (hasCsv, hasSingle) match {
+      case (true, true) =>
+        Left(
+          "Cannot combine --csv with single-file flags (--operation/--source-uri/--dest-uri); choose one mode"
+        )
+      case (false, false) =>
+        Left(
+          "CSV file path is required (use --csv or CSV_FILE_PATH), or specify --operation and --source-uri for single-file mode"
+        )
+      case (true, false) => Right(())
+      case (false, true) =>
+        if (settings.operation.isEmpty)
+          Left("Single-file mode requires --operation (or S3_OPERATION)")
+        else if (settings.sourceUri.isEmpty)
+          Left("Single-file mode requires --source-uri (or SOURCE_S3_URI)")
+        else Right(())
+    }
+  }
+
+  /**
+    * Build a single S3OperationRequest from CLI/env settings.
+    */
+  def buildSingleFileRequest(
+    settings: CsvOpsSettings
+  ): Either[String, S3OperationRequest] = {
+    for {
+      op <- S3Operation.fromString(settings.operation)
+      source <- parseS3Uri(settings.sourceUri).toRight(
+        s"Invalid --source-uri (expected s3://bucket/key): '${settings.sourceUri}'"
+      )
+      destOpt <- if (settings.destinationUri.nonEmpty) {
+        parseS3Uri(settings.destinationUri)
+          .toRight(
+            s"Invalid --dest-uri (expected s3://bucket/key): '${settings.destinationUri}'"
+          )
+          .map(Some(_))
+      } else {
+        Right(None)
+      }
+      _ <- (op, destOpt) match {
+        case (S3Operation.COPY, None) =>
+          Left("COPY requires --dest-uri (or DEST_S3_URI)")
+        case _ => Right(())
+      }
+    } yield {
+      val (srcBucket, srcKey) = source
+      S3OperationRequest(
+        operation = op,
+        sourceBucket = srcBucket,
+        sourceKey = srcKey,
+        sourceS3VersionId = Option(settings.sourceVersionId).filter(_.nonEmpty),
+        destinationBucket = destOpt.map(_._1),
+        destinationKey = destOpt.map(_._2)
+      )
     }
   }
 }

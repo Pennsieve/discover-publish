@@ -247,11 +247,35 @@ sbt "runMain com.pennsieve.publish.CsvS3OpsMain --parallelism 10"
 
 ## Command Line Options
 
-### Required Options
+### Required Options (choose one mode)
+
+#### CSV mode
 
 - `--csv <path>` - Path to the CSV file containing copy instructions
   - Supports local file paths (e.g., `/path/to/file.csv`) and S3 URIs (e.g., `s3://bucket/key`)
   - Environment variable: `CSV_FILE_PATH`
+
+#### Single-file mode
+
+Perform exactly one S3 operation without a CSV. Mutually exclusive with `--csv`.
+
+- `--operation <op>` - Operation to perform: `COPY`, `DELETE`, `LIST`, or `KEEP`
+  - Environment variable: `S3_OPERATION`
+- `--source-uri <uri>` - Source S3 URI (`s3://bucket/key`)
+  - Environment variable: `SOURCE_S3_URI`
+- `--dest-uri <uri>` - Destination S3 URI (required for `COPY`)
+  - Environment variable: `DEST_S3_URI`
+- `--source-version-id <id>` - Optional source S3 version ID
+  - Environment variable: `SOURCE_S3_VERSION_ID`
+
+Example:
+
+```bash
+sbt "runMain com.pennsieve.publish.CsvS3OpsMain \
+  --operation COPY \
+  --source-uri s3://src-bucket/path/file.txt \
+  --dest-uri  s3://dst-bucket/path/file.txt"
+```
 
 ### Optional Options
 
@@ -278,6 +302,10 @@ All configuration options can be set via environment variables:
 | Environment Variable | Description | Example |
 |---------------------|-------------|---------|
 | `CSV_FILE_PATH` | Path to CSV file with copy instructions (local or S3 URI) | `/path/to/file.csv` or `s3://bucket/key` |
+| `S3_OPERATION` | Single-file mode: operation to perform | `COPY`, `DELETE`, `LIST`, `KEEP` |
+| `SOURCE_S3_URI` | Single-file mode: source S3 URI | `s3://bucket/key` |
+| `DEST_S3_URI` | Single-file mode: destination S3 URI (required for `COPY`) | `s3://bucket/key` |
+| `SOURCE_S3_VERSION_ID` | Single-file mode: optional source version ID | `abc123def456` |
 | `AWS_REGION` | AWS region | `us-west-2` |
 | `MAX_PART_SIZE` | Maximum part size in bytes | `104857600` (100MB) |
 | `MAX_WAIT_TIME` | Maximum wait time duration | `120m` or `2h` |
