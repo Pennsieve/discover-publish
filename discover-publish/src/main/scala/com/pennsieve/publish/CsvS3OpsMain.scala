@@ -33,12 +33,11 @@ import software.amazon.awssdk.services.s3.model.{
 }
 
 import java.io.File
-import java.util.concurrent.TimeUnit
+import java.util.concurrent.{ Executors, ForkJoinPool, TimeUnit }
 import scala.concurrent.duration.{ Duration, FiniteDuration, SECONDS }
 import scala.concurrent.{ Await, ExecutionContext, Future }
 import scala.io.Source
 import scala.util.{ Failure, Success, Try }
-import java.util.concurrent.ForkJoinPool
 
 case class CsvOpsSettings(
   csvFilePath: String = "",
@@ -46,6 +45,7 @@ case class CsvOpsSettings(
   maxPartSize: Long = CsvOpsSettings.MAX_PART_SIZE,
   maxWaitTime: Duration = CsvOpsSettings.MAX_WAIT_TIME,
   parallelism: Int = CsvOpsSettings.DEFAULT_PARALLELISM,
+  multipartCopyRetries: Int = CsvOpsSettings.DEFAULT_MULTIPART_COPY_RETRIES,
   operation: String = "",
   sourceUri: String = "",
   destinationUri: String = "",
@@ -65,6 +65,8 @@ case class CsvOpsSettings(
         )
       case "--parallelism" =>
         this.copy(parallelism = value.toInt)
+      case "--multipartCopyRetries" =>
+        this.copy(multipartCopyRetries = value.toInt)
       case "--operation" =>
         this.copy(operation = value)
       case "--source-uri" =>
@@ -87,6 +89,7 @@ object CsvOpsSettings {
   val MAX_PART_SIZE: Long = 50 * 1024 * 1024 // 50 MB
   val MAX_WAIT_TIME: FiniteDuration = Duration(60, TimeUnit.MINUTES)
   val DEFAULT_PARALLELISM: Int = 1
+  val DEFAULT_MULTIPART_COPY_RETRIES: Int = 5
 
   // Environment variable names
   object EnvVars {
@@ -99,6 +102,7 @@ object CsvOpsSettings {
     val SOURCE_S3_URI = "SOURCE_S3_URI"
     val DEST_S3_URI = "DEST_S3_URI"
     val SOURCE_S3_VERSION_ID = "SOURCE_S3_VERSION_ID"
+    val MULTIPART_COPY_RETRIES = "MULTIPART_COPY_RETRIES"
   }
 
   def apply(): CsvOpsSettings = new CsvOpsSettings()
@@ -133,6 +137,13 @@ object CsvOpsSettings {
       case _ => DEFAULT_PARALLELISM
     }
 
+    val multipartCopyRetries =
+      sys.env.get(EnvVars.MULTIPART_COPY_RETRIES) match {
+        case Some(retries) if retries.nonEmpty =>
+          Try(retries.toInt).getOrElse(DEFAULT_MULTIPART_COPY_RETRIES)
+        case _ => DEFAULT_MULTIPART_COPY_RETRIES
+      }
+
     val operation = sys.env.getOrElse(EnvVars.S3_OPERATION, "")
     val sourceUri = sys.env.getOrElse(EnvVars.SOURCE_S3_URI, "")
     val destinationUri = sys.env.getOrElse(EnvVars.DEST_S3_URI, "")
@@ -144,6 +155,7 @@ object CsvOpsSettings {
       maxPartSize = maxPartSize,
       maxWaitTime = maxWaitTime,
       parallelism = parallelism,
+      multipartCopyRetries = multipartCopyRetries,
       operation = operation,
       sourceUri = sourceUri,
       destinationUri = destinationUri,
@@ -660,49 +672,32 @@ object CsvS3OpsMain extends LazyLogging {
   def processOperationRequests(
     requests: List[S3OperationRequest],
     client: S3Client,
-    uploader: MultipartUploader,
-    settings: CsvOpsSettings
+    uploader: MultipartUploader
   )(implicit
     ec: ExecutionContext
   ): Future[List[Either[Throwable, String]]] = {
     logger.info(s"Processing ${requests.length} S3 operation requests")
 
-    // Process requests with controlled parallelism
-    val batches =
-      requests.grouped(settings.parallelism).toList
-
-    batches.foldLeft(Future.successful(List.empty[Either[Throwable, String]])) {
-      (accFuture, batch) =>
-        accFuture.flatMap { acc =>
-          // Process this batch in parallel
-          val batchFutures = batch.map { request =>
-            logger.info(
-              s"Executing ${request.operation}: ${request.sourceBucket}/${request.sourceKey}"
+    Future.traverse(requests) { request =>
+      executeOperation(request, client, uploader)
+        .map {
+          case Right(msg) =>
+            logger.info(msg)
+            Right(msg)
+          case Left(ex) =>
+            logger.error(
+              s"Failed to execute ${request.operation}: ${request.sourceBucket}/${request.sourceKey}",
+              ex
             )
-
-            executeOperation(request, client, uploader)
-              .map {
-                case Right(msg) =>
-                  logger.info(msg)
-                  Right(msg)
-                case Left(ex) =>
-                  logger.error(
-                    s"Failed to execute ${request.operation}: ${request.sourceBucket}/${request.sourceKey}",
-                    ex
-                  )
-                  Left(ex)
-              }
-              .recover {
-                case ex: Throwable =>
-                  logger.error(
-                    s"Unexpected error executing ${request.operation}: ${request.sourceBucket}/${request.sourceKey}",
-                    ex
-                  )
-                  Left(ex)
-              }
-          }
-
-          Future.sequence(batchFutures).map(acc ++ _)
+            Left(ex)
+        }
+        .recover {
+          case ex: Throwable =>
+            logger.error(
+              s"Unexpected error executing ${request.operation}: ${request.sourceBucket}/${request.sourceKey}",
+              ex
+            )
+            Left(ex)
         }
     }
   }
@@ -813,8 +808,12 @@ object CsvS3OpsMain extends LazyLogging {
 
     // Initialize S3 client (needed for both CSV download and copy operations)
     val client = s3Client(settings.region)
+
+    // create a bounded thread pool and Execution Context to run operations in parallel
+    val customThreadPool =
+      Executors.newFixedThreadPool(settings.parallelism)
     implicit val ec: ExecutionContext =
-      ExecutionContext.fromExecutor(new ForkJoinPool(settings.parallelism))
+      ExecutionContext.fromExecutor(customThreadPool)
 
     try {
       val operationRequestsEither: Either[String, List[S3OperationRequest]] =
@@ -840,17 +839,16 @@ object CsvS3OpsMain extends LazyLogging {
           }
 
           // Initialize uploader (needed for COPY operations)
-          val uploader = MultipartUploader(client, settings.maxPartSize)
+          val uploader = MultipartUploader(
+            client,
+            settings.maxPartSize,
+            settings.multipartCopyRetries
+          )
 
           try {
             // Process all operation requests
             val resultsFuture = {
-              processOperationRequests(
-                operationRequests,
-                client,
-                uploader,
-                settings
-              )
+              processOperationRequests(operationRequests, client, uploader)
             }
             val waitTime = settings.maxWaitTime match {
               case ZERO_SECONDS => EXTENSIVE_WAIT_TIME
