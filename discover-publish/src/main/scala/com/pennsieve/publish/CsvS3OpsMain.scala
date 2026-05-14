@@ -192,6 +192,10 @@ object CsvOpsSettings {
 }
 
 object CsvS3OpsMain extends LazyLogging {
+  // v1.0.0 - first implementation
+  // v1.1.0 - support for multiple operations
+  // v1.2.0 - added single-file operation
+  private final val version: String = "v1.2.1"
 
   /**
     * Column names expected in the CSV file
@@ -717,9 +721,8 @@ object CsvS3OpsMain extends LazyLogging {
   }
 
   def printUsage(): Unit = {
-    println(
-      """
-      |Usage: CsvS3OpsMain --csv <path-to-csv> [options]
+    println(s"""
+      |Usage: CsvS3OpsMain ${version} --csv <path-to-csv> [options]
       |
       |Configuration Priority (highest to lowest):
       |  1. Command line arguments
@@ -790,8 +793,7 @@ object CsvS3OpsMain extends LazyLogging {
       |
       |Example with S3 URI:
       |  sbt "runMain com.pennsieve.publish.CsvS3OpsMain --csv s3://my-bucket/path/to/file.csv"
-      |""".stripMargin
-    )
+      |""".stripMargin)
   }
 
   val ZERO_SECONDS = FiniteDuration(Duration("0 seconds").toSeconds, SECONDS)
@@ -799,7 +801,7 @@ object CsvS3OpsMain extends LazyLogging {
     FiniteDuration(Duration("7 days").toSeconds, SECONDS)
 
   def main(args: Array[String]): Unit = {
-    logger.info("CsvS3OpsMain starting")
+    logger.info(s"CsvS3OpsMain ${version} starting")
 
     if (args.contains("--help") || args.contains("-h")) {
       printUsage()
