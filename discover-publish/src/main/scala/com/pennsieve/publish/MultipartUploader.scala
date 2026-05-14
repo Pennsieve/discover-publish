@@ -228,7 +228,7 @@ class MultipartUploader(
       val partList = parts(0L, objectSize, maxPartSize, List[String]()).reverse
       val uploadId = start(request.destinationBucket, request.destinationKey)
       logger.debug(
-        s"MultipartUploader.multipartCopy() source: ${request.sourceBucket}/${request.sourceKey} uploadId: ${uploadId} numberOfParts: ${partList.length}"
+        s"MultipartUploader.multipartCopy() [maxPartSize:${maxPartSize},multipartCopyRetries:${multipartCopyRetries}] source: ${request.sourceBucket}/${request.sourceKey} uploadId: ${uploadId} numberOfParts: ${partList.length}"
       )
       val copiedParts = partList.zipWithIndex.map {
         case (part, index) =>

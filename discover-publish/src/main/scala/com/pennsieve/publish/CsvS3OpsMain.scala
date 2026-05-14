@@ -82,6 +82,20 @@ case class CsvOpsSettings(
   /** True when any single-file flag/env var has been provided. */
   def isSingleFileMode: Boolean =
     operation.nonEmpty || sourceUri.nonEmpty || destinationUri.nonEmpty
+
+  override def toString: String =
+    s"CsvOpsSettings(" +
+      s"csvFilePath: ${csvFilePath}," +
+      s"region: ${region}," +
+      s"maxPartSize: ${maxPartSize}," +
+      s"maxWaitTime: ${maxWaitTime}," +
+      s"parallelism: ${parallelism}," +
+      s"multipartCopyRetries: ${multipartCopyRetries}," +
+      s"operation: ${operation}," +
+      s"sourceUri: ${sourceUri}," +
+      s"sourceVersionId: ${sourceVersionId}" +
+      s"destinationUri: ${destinationUri}," +
+      s")"
 }
 
 object CsvOpsSettings {
