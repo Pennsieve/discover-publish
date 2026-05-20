@@ -66,8 +66,16 @@ case class CompletedRequest(
 
 case class FinishedParts(versionId: String, eTag: String, sha256: String)
 
-class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
-    extends LazyLogging {
+object MultipartUploaderSettings {
+  val MULTIPART_MAX_PART_SIZE: Long = 4L * 1024L * 1024L * 1024L
+  val MULTIPART_COPY_RETRIES: Int = 3
+}
+
+class MultipartUploader(
+  s3Client: S3Client,
+  maxPartSize: Long = MultipartUploaderSettings.MULTIPART_MAX_PART_SIZE,
+  multipartCopyRetries: Int = MultipartUploaderSettings.MULTIPART_COPY_RETRIES
+) extends LazyLogging {
 
   private val SinglePartCopyThreshold: Long = 5L * 1024L * 1024L * 1024L
 
@@ -129,6 +137,16 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
     createMultipartUploadResponse.uploadId()
   }
 
+  // Returning T, throwing the exception on failure
+  @annotation.tailrec
+  private final def retry[T](n: Int)(fn: => T): T = {
+    util.Try { fn } match {
+      case util.Success(x) => x
+      case _ if n > 1 => retry(n - 1)(fn)
+      case util.Failure(e) => throw e
+    }
+  }
+
   private def copyPart(
     sourceBucket: String,
     sourceKey: String,
@@ -155,8 +173,10 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
 
     sourceS3VersionId.foreach(uploadPartCopyRequestBuilder.sourceVersionId)
 
-    val uploadPartCopyResponse =
-      s3Client.uploadPartCopy(uploadPartCopyRequestBuilder.build())
+    val uploadPartCopyRequest = uploadPartCopyRequestBuilder.build()
+    val uploadPartCopyResponse = retry(multipartCopyRetries)(
+      s3Client.uploadPartCopy(uploadPartCopyRequest)
+    )
     val copyPartResult = uploadPartCopyResponse.copyPartResult()
 
     val completedPart = CompletedPart
@@ -208,7 +228,7 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
       val partList = parts(0L, objectSize, maxPartSize, List[String]()).reverse
       val uploadId = start(request.destinationBucket, request.destinationKey)
       logger.debug(
-        s"MultipartUploader.multipartCopy() uploadId: ${uploadId} numberOfParts: ${partList.length}"
+        s"MultipartUploader.multipartCopy() [maxPartSize:${maxPartSize},multipartCopyRetries:${multipartCopyRetries}] source: ${request.sourceBucket}/${request.sourceKey} uploadId: ${uploadId} numberOfParts: ${partList.length}"
       )
       val copiedParts = partList.zipWithIndex.map {
         case (part, index) =>
@@ -316,6 +336,10 @@ class MultipartUploader(s3Client: S3Client, maxPartSize: Long)
 }
 
 object MultipartUploader {
-  def apply(s3Client: S3Client, maxPartSize: Long) =
-    new MultipartUploader(s3Client, maxPartSize)
+  def apply(
+    s3Client: S3Client,
+    maxPartSize: Long = MultipartUploaderSettings.MULTIPART_MAX_PART_SIZE,
+    multipartCopyRetries: Int = MultipartUploaderSettings.MULTIPART_COPY_RETRIES
+  ) =
+    new MultipartUploader(s3Client, maxPartSize, multipartCopyRetries)
 }
