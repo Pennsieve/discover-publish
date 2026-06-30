@@ -16,7 +16,7 @@
 
 package com.pennsieve.publish
 
-import com.amazonaws.services.s3.model.ObjectMetadata
+import cats.implicits._
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.managers.{ DatasetStatusManager, FileManager }
 import com.pennsieve.models.{
@@ -54,7 +54,6 @@ import org.scalatest.matchers.should.Matchers
 import software.amazon.awssdk.core.sync.RequestBody
 import software.amazon.awssdk.services.s3.S3Client
 import software.amazon.awssdk.services.s3.model.{
-  ChecksumAlgorithm,
   PutObjectRequest,
   PutObjectResponse
 }
@@ -62,14 +61,18 @@ import software.amazon.awssdk.services.s3.model.{
 import java.security.MessageDigest
 import java.time.{ LocalDate, ZoneId }
 import java.util.Base64
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ ExecutionContext, Future }
 import scala.util.Random
 
 trait ValueHelper extends Matchers {
-  val sourceBucket = "test-source-bucket"
-  val publishBucket = "test-publish-bucket"
-  val embargoBucket = "test-embargo-bucket"
-  val assetBucket = "test-asset-bucket"
+  lazy val sourceBucket =
+    s"test-source-bucket-${generateRandomString().toLowerCase}"
+  lazy val publishBucket =
+    s"test-publish-bucket-${generateRandomString().toLowerCase}"
+  lazy val embargoBucket =
+    s"test-embargo-bucket-${generateRandomString().toLowerCase}"
+  lazy val assetBucket =
+    s"test-asset-bucket-${generateRandomString().toLowerCase}"
   val assetKeyPrefix = "dataset-assets"
   val testKeyV4 = "100/10/"
   val testKeyV5 = "100/"
@@ -460,6 +463,45 @@ trait ValueHelper extends Matchers {
       createS3FileV2(_, file.s3Bucket, file.s3Key, content = content)
     )
     (file, uploadResponse)
+  }
+
+  /**
+    * Creates a file for the given package that is marked as published. In tests the file
+    * should point to an object in the publish bucket.
+    */
+  def createPublishedFile(
+    fileManager: FileManager,
+    pkg: Package,
+    name: String = generateRandomString(),
+    s3Bucket: String = publishBucket,
+    s3Key: String,
+    publishedS3VersionId: String,
+    fileType: FileType = FileType.Text,
+    objectType: FileObjectType = FileObjectType.Source,
+    processingState: FileProcessingState = FileProcessingState.Processed,
+    size: Long = 0,
+    uploadedState: Option[FileState] = None
+  )(implicit
+    executionContext: ExecutionContext
+  ): File = {
+    fileManager
+      .create(
+        name,
+        fileType,
+        pkg,
+        s3Bucket,
+        s3Key,
+        objectType,
+        processingState,
+        size,
+        uploadedState = uploadedState,
+        publishedS3VersionId = Some(publishedS3VersionId)
+      )
+      .await match {
+      case Right(x) => x
+      case Left(e) => throw e
+    }
+
   }
 
   def publicAssetKeyPrefix(publishContainer: PublishContainer): String =
