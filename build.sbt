@@ -243,7 +243,6 @@ lazy val discoverPublishSettings = Seq(
     "org.scalamock" %% "scalamock" % "5.2.0" % Test,
     "org.mock-server" % "mockserver-client-java-no-dependencies" % "5.14.0" % Test,
     "com.pennsieve" %% "pennsieve-core" % coreVersion % Test classifier "tests",
-    "com.pennsieve" %% "migrations" % coreVersion % Test,
     "com.dimafeng" %% "testcontainers-scala" % testContainersVersion % Test
   ),
   excludeDependencies ++= unwantedDependencies,

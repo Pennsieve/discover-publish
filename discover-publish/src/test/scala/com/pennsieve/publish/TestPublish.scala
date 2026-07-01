@@ -24,6 +24,7 @@ import cats.data.EitherT
 import cats.implicits._
 import com.amazonaws.services.s3.model.{ Bucket }
 import com.pennsieve.audit.middleware.TraceId
+import com.pennsieve.test.helpers.AwaitableImplicits.toAwaitable
 import com.pennsieve.clients.{ DatasetAssetClient, S3DatasetAssetClient }
 import com.pennsieve.aws.s3.S3
 import com.pennsieve.core.utilities._
@@ -77,6 +78,39 @@ case class InsecureDatabaseContainer(config: Config, organization: Organization)
   override val postgresUseSSL = false
 }
 
+object InsecureDatabaseContainer {
+
+  case class InsecureOrganizationManagerContainer(config: Config)
+      extends Container
+      with DatabaseContainer
+      with OrganizationManagerContainer {
+    override val postgresUseSSL: Boolean = false
+  }
+
+  def fromOrganizationId(
+    config: Config,
+    organizationId: Int
+  )(implicit
+    ec: ExecutionContext
+  ): InsecureDatabaseContainer = {
+    val orgContainer = InsecureOrganizationManagerContainer(config)
+    try {
+      val organization =
+        orgContainer.organizationManager.get(organizationId).await match {
+          case Right(org) => org
+          case Left(err) =>
+            throw new IllegalStateException(
+              s"Could not load organization $organizationId for test setup — " +
+                s"is the test database seeded with this org? Underlying error: $err"
+            )
+        }
+      InsecureDatabaseContainer(config, organization)
+    } finally {
+      orgContainer.db.close()
+    }
+  }
+}
+
 class TestPublish
     extends AnyWordSpec
     with Matchers
@@ -96,7 +130,7 @@ class TestPublish
   implicit var s3: S3 = _
   var bucket: Bucket = _
 
-  val testOrganization: Organization = sampleOrganization
+  var testOrganization: Organization = _
 
   var testDataset: Dataset = _
   var testUser: User = _
@@ -134,12 +168,11 @@ class TestPublish
      * Since PublishContainer is scoped to an organization, and requires a
      * user-actor, use a simple database container to set up initial conditions.
      */
-    databaseContainer = InsecureDatabaseContainer(config, testOrganization)
-    databaseContainer.db.run(createSchema(testOrganization.id.toString)).await
-    migrateOrganizationSchema(
-      testOrganization.id,
-      databaseContainer.postgresDatabase
-    )
+    databaseContainer =
+      InsecureDatabaseContainer.fromOrganizationId(config, sampleOrganizationId)
+    testOrganization = databaseContainer.organization
+    resyncUserIdSequence(databaseContainer)
+    resyncDatasetsIdSequence(databaseContainer)
 
     s3 = new S3(s3Container.s3Client)
     val s3Client = s3Container.s3ClientV2

@@ -83,6 +83,9 @@ trait ValueHelper extends Matchers {
   val sampleOrganization: Organization =
     Organization("N:organization:32352", "Test org", "test-org", id = 5)
 
+  // sampleOrganizationId is an org that already exists in the seed pennsievedb Docker container
+  val sampleOrganizationId = 2
+
   val ownerUser: User =
     User(
       nodeId = " N:user:02a6e643-2f6c-4597-a9fe-b75f12a2ad32",
@@ -193,6 +196,33 @@ trait ValueHelper extends Matchers {
       references = references,
       pennsieveSchemaVersion = pennsieveSchemaVersion
     )
+  }
+
+  // seeded users have explicit ids; advance the sequence past them so inserts don't collide.
+  def resyncUserIdSequence(
+    databaseContainer: InsecureDatabaseContainer
+  ): Unit = {
+    databaseContainer.db
+      .run(
+        sql"""SELECT setval(pg_get_serial_sequence('pennsieve.users', 'id'),
+                      (SELECT MAX(id) FROM pennsieve.users))"""
+          .as[Long]
+      )
+      .await
+  }
+
+  // seeded datasets have explicit ids; advance the sequence past them so inserts don't collide.
+  def resyncDatasetsIdSequence(
+    databaseContainer: InsecureDatabaseContainer
+  ): Unit = {
+    val qualified = s""""${databaseContainer.organization.schemaId}".datasets"""
+    databaseContainer.db
+      .run(
+        sql"""SELECT setval(pg_get_serial_sequence($qualified, 'id'),
+                          (SELECT MAX(id) FROM #$qualified))"""
+          .as[Long]
+      )
+      .await
   }
 
   def createUser(

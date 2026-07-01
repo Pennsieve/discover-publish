@@ -24,7 +24,7 @@ import com.dimafeng.testcontainers.GenericContainer
 import com.pennsieve.test.{
   DockerContainer,
   PostgresContainerImpl,
-  PostgresDockerContainerImpl,
+  PostgresSeedDockerContainerImpl,
   StackedDockerContainer
 }
 import org.testcontainers.containers.wait.strategy.HttpWaitStrategy
@@ -46,7 +46,7 @@ import java.net.URI
   */
 object DiscoverPublishDockerContainers {
   val postgresContainer: PostgresContainerImpl =
-    new PostgresDockerContainerImpl
+    new PostgresSeedDockerContainerImpl
 
   val s3Container: S3DockerContainerImpl =
     new S3DockerContainerImpl

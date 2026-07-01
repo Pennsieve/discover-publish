@@ -59,7 +59,7 @@ class TestPackagesExport
 
   implicit var s3: S3 = _
 
-  val testOrganization: Organization = sampleOrganization
+  var testOrganization: Organization = _
 
   var testDataset: Dataset = _
   var testUser: User = _
@@ -86,12 +86,11 @@ class TestPackagesExport
      * Since PublishContainer is scoped to an organization, and requires a
      * user-actor, use a simple database container to set up initial conditions.
      */
-    databaseContainer = InsecureDatabaseContainer(config, testOrganization)
-    databaseContainer.db.run(createSchema(testOrganization.id.toString)).await
-    migrateOrganizationSchema(
-      testOrganization.id,
-      databaseContainer.postgresDatabase
-    )
+    databaseContainer =
+      InsecureDatabaseContainer.fromOrganizationId(config, sampleOrganizationId)
+    testOrganization = databaseContainer.organization
+    resyncUserIdSequence(databaseContainer)
+    resyncDatasetsIdSequence(databaseContainer)
 
     s3 = new S3(s3Container.s3Client)
     val s3Client = s3Container.s3ClientV2
