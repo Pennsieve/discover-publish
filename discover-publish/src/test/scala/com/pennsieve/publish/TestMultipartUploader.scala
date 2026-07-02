@@ -55,8 +55,6 @@ class TestMultipartUploader
   var multipartUploader: MultipartUploader = _
   val maxPartSize = (1024 * 1024).toLong
 
-  val testOrganization: Organization = sampleOrganization
-
   override def afterStart(): Unit = {
     super.afterStart()
 

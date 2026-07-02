@@ -169,7 +169,7 @@ class TestPublish
      * user-actor, use a simple database container to set up initial conditions.
      */
     databaseContainer =
-      bootstrapInsecureDatabaseContainer(config, sampleOrganizationId)
+      bootstrapInsecureDatabaseContainer(config, seedOrganizationId)
     testOrganization = databaseContainer.organization
 
     s3 = new S3(s3Container.s3Client)

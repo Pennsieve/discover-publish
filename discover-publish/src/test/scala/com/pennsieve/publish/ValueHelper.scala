@@ -81,11 +81,8 @@ trait ValueHelper extends Matchers {
   val copyParallelism = 5
   val testDoi: String = "10.38492/234.7"
 
-  val sampleOrganization: Organization =
-    Organization("N:organization:32352", "Test org", "test-org", id = 5)
-
-  // sampleOrganizationId is an org that already exists in the seed pennsievedb Docker container
-  val sampleOrganizationId = 2
+  // seedOrganizationId is an org that already exists in the seed pennsievedb Docker container
+  val seedOrganizationId = 2
 
   val ownerUser: User =
     User(
