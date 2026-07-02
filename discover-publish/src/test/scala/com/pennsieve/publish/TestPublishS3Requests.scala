@@ -198,10 +198,8 @@ class TestPublishS3Requests
      * user-actor, use a simple database container to set up initial conditions.
      */
     databaseContainer =
-      InsecureDatabaseContainer.fromOrganizationId(config, sampleOrganizationId)
+      bootstrapInsecureDatabaseContainer(config, sampleOrganizationId)
     testOrganization = databaseContainer.organization
-    resyncUserIdSequence(databaseContainer)
-    resyncDatasetsIdSequence(databaseContainer)
     mockServerClient = mockServerContainer.mockServerClient
 
   }

@@ -87,10 +87,8 @@ class TestPackagesExport
      * user-actor, use a simple database container to set up initial conditions.
      */
     databaseContainer =
-      InsecureDatabaseContainer.fromOrganizationId(config, sampleOrganizationId)
+      bootstrapInsecureDatabaseContainer(config, sampleOrganizationId)
     testOrganization = databaseContainer.organization
-    resyncUserIdSequence(databaseContainer)
-    resyncDatasetsIdSequence(databaseContainer)
 
     s3 = new S3(s3Container.s3Client)
     val s3Client = s3Container.s3ClientV2

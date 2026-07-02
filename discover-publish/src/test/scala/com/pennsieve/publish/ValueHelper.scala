@@ -48,6 +48,7 @@ import com.pennsieve.models.{
 }
 import com.pennsieve.test.helpers.AwaitableImplicits.toAwaitable
 import com.pennsieve.traits.PostgresProfile.api._
+import com.typesafe.config.Config
 import org.scalatest.Assertion
 import org.scalatest.EitherValues._
 import org.scalatest.matchers.should.Matchers
@@ -196,6 +197,23 @@ trait ValueHelper extends Matchers {
       references = references,
       pennsieveSchemaVersion = pennsieveSchemaVersion
     )
+  }
+
+  // returns an InsecureDatabaseContainer scoped to the org with the given id. Assumes that the
+  // org already exists in DB as part of our pennsievedb seed image.
+  // It therefor also uses setval on the id sequences for users and datasets so that creating
+  // new rows there will not result in id conflicts with users and datasets already in the seed.
+  def bootstrapInsecureDatabaseContainer(
+    config: Config,
+    organizationId: Int
+  )(implicit
+    ec: ExecutionContext
+  ): InsecureDatabaseContainer = {
+    val dbContainer =
+      InsecureDatabaseContainer.fromOrganizationId(config, organizationId)
+    resyncUserIdSequence(dbContainer)
+    resyncDatasetsIdSequence(dbContainer)
+    dbContainer
   }
 
   // seeded users have explicit ids; advance the sequence past them so inserts don't collide.
