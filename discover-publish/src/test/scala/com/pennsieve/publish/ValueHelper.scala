@@ -48,6 +48,7 @@ import com.pennsieve.models.{
 }
 import com.pennsieve.test.helpers.AwaitableImplicits.toAwaitable
 import com.pennsieve.traits.PostgresProfile.api._
+import com.typesafe.config.Config
 import org.scalatest.Assertion
 import org.scalatest.EitherValues._
 import org.scalatest.matchers.should.Matchers
@@ -80,8 +81,8 @@ trait ValueHelper extends Matchers {
   val copyParallelism = 5
   val testDoi: String = "10.38492/234.7"
 
-  val sampleOrganization: Organization =
-    Organization("N:organization:32352", "Test org", "test-org", id = 5)
+  // seedOrganizationId is an org that already exists in the seed pennsievedb Docker container
+  val seedOrganizationId = 2
 
   val ownerUser: User =
     User(
@@ -193,6 +194,50 @@ trait ValueHelper extends Matchers {
       references = references,
       pennsieveSchemaVersion = pennsieveSchemaVersion
     )
+  }
+
+  // returns an InsecureDatabaseContainer scoped to the org with the given id. Assumes that the
+  // org already exists in DB as part of our pennsievedb seed image.
+  // It therefor also uses setval on the id sequences for users and datasets so that creating
+  // new rows there will not result in id conflicts with users and datasets already in the seed.
+  def bootstrapInsecureDatabaseContainer(
+    config: Config,
+    organizationId: Int
+  )(implicit
+    ec: ExecutionContext
+  ): InsecureDatabaseContainer = {
+    val dbContainer =
+      InsecureDatabaseContainer.fromOrganizationId(config, organizationId)
+    resyncUserIdSequence(dbContainer)
+    resyncDatasetsIdSequence(dbContainer)
+    dbContainer
+  }
+
+  // seeded users have explicit ids; advance the sequence past them so inserts don't collide.
+  def resyncUserIdSequence(
+    databaseContainer: InsecureDatabaseContainer
+  ): Unit = {
+    databaseContainer.db
+      .run(
+        sql"""SELECT setval(pg_get_serial_sequence('pennsieve.users', 'id'),
+                      (SELECT MAX(id) FROM pennsieve.users))"""
+          .as[Long]
+      )
+      .await
+  }
+
+  // seeded datasets have explicit ids; advance the sequence past them so inserts don't collide.
+  def resyncDatasetsIdSequence(
+    databaseContainer: InsecureDatabaseContainer
+  ): Unit = {
+    val qualified = s""""${databaseContainer.organization.schemaId}".datasets"""
+    databaseContainer.db
+      .run(
+        sql"""SELECT setval(pg_get_serial_sequence($qualified, 'id'),
+                          (SELECT MAX(id) FROM #$qualified))"""
+          .as[Long]
+      )
+      .await
   }
 
   def createUser(

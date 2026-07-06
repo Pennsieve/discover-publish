@@ -104,7 +104,7 @@ class TestPublishS3Requests
     with ValueHelper
     with EitherBePropertyMatchers {
 
-  val testOrganization: Organization = sampleOrganization
+  var testOrganization: Organization = _
 
   val publishAssetResult: PublishAssetResult = PublishAssetResult.apply(
     externalIdToPackagePath = Map.empty,
@@ -160,26 +160,7 @@ class TestPublishS3Requests
       orcid = Some("0000-0001-0221-1986")
     )
 
-  val datasetManifest: DatasetMetadataV5_0 = DatasetMetadataV5_0(
-    pennsieveDatasetId = 100,
-    version = 10,
-    revision = None,
-    name = "name",
-    description = "description",
-    creator = owner,
-    contributors = List(contributor),
-    sourceOrganization = testOrganization.name,
-    keywords = List("test"),
-    datePublished = LocalDate.now(),
-    license = None,
-    `@id` = s"https://doi.org/$testDoi",
-    collections = Some(List(collection)),
-    relatedPublications = Some(List(externalPublication)),
-    files = List.empty,
-    pennsieveSchemaVersion = "5.0",
-    release = None,
-    references = None
-  )
+  var datasetManifest: DatasetMetadataV5_0 = _
 
   class DatasetFileInfo(
     val sourceKey: String,
@@ -216,12 +197,9 @@ class TestPublishS3Requests
      * Since PublishContainer is scoped to an organization, and requires a
      * user-actor, use a simple database container to set up initial conditions.
      */
-    databaseContainer = InsecureDatabaseContainer(config, testOrganization)
-    databaseContainer.db.run(createSchema(testOrganization.id.toString)).await
-    migrateOrganizationSchema(
-      testOrganization.id,
-      databaseContainer.postgresDatabase
-    )
+    databaseContainer =
+      bootstrapInsecureDatabaseContainer(config, seedOrganizationId)
+    testOrganization = databaseContainer.organization
     mockServerClient = mockServerContainer.mockServerClient
 
   }
@@ -263,6 +241,27 @@ class TestPublishS3Requests
 
     datasetFileInfos =
       addPackagesToDataset(databaseContainer, publishContainer.fileManager)
+
+    datasetManifest = DatasetMetadataV5_0(
+      pennsieveDatasetId = 100,
+      version = 10,
+      revision = None,
+      name = "name",
+      description = "description",
+      creator = owner,
+      contributors = List(contributor),
+      sourceOrganization = testOrganization.name,
+      keywords = List("test"),
+      datePublished = LocalDate.now(),
+      license = None,
+      `@id` = s"https://doi.org/$testDoi",
+      collections = Some(List(collection)),
+      relatedPublications = Some(List(externalPublication)),
+      files = List.empty,
+      pennsieveSchemaVersion = "5.0",
+      release = None,
+      references = None
+    )
 
   }
 
