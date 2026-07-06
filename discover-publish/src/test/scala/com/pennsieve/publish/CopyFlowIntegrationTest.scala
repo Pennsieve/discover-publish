@@ -83,7 +83,8 @@ class CopyFlowIntegrationTest
   var targetBucketName: String = _
   var sourceS3Key1: String = _
   var sourceS3Key2: String = _
-  val testOrganization: Organization = sampleOrganization
+  val testOrganization: Organization =
+    Organization("N:organization:32352", "Test org", "test-org", id = 5)
 
   var testDataset: Dataset = _
   var testUser: User = _

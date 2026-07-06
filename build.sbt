@@ -60,7 +60,7 @@ lazy val swaggerAkkaHttpVersion = "1.5.2"
 
 lazy val auditMiddlewareVersion = "1.0.3"
 lazy val authMiddlewareVersion = "5.1.3"
-lazy val coreVersion = "405-63940d4"
+lazy val coreVersion = "422-eaa5968"
 
 lazy val awsVersion = "1.12.797"
 lazy val awsV2Version = "2.42.28"
@@ -245,7 +245,6 @@ lazy val discoverPublishSettings = Seq(
     "org.scalamock" %% "scalamock" % "5.2.0" % Test,
     "org.mock-server" % "mockserver-client-java-no-dependencies" % "5.14.0" % Test,
     "com.pennsieve" %% "pennsieve-core" % coreVersion % Test classifier "tests",
-    "com.pennsieve" %% "migrations" % coreVersion % Test,
     "com.dimafeng" %% "testcontainers-scala" % testContainersVersion % Test
   ),
   excludeDependencies ++= unwantedDependencies,
