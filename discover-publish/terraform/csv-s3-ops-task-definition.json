@@ -1,0 +1,35 @@
+{
+  "family": "csv-s3-ops",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "2048",
+  "executionRoleArn": "${execution_role_arn}",
+  "taskRoleArn": "${task_role_arn}",
+  "containerDefinitions": [
+    {
+      "name": "csv-s3-ops",
+      "image": "pennsieve/s3-ops-machine:${image_tag}",
+      "repositoryCredentials": {
+        "credentialsParameter": "${docker_hub_credentials_arn}"
+      },
+      "essential": true,
+      "environment": [
+        { "name": "CSV_FILE_PATH", "value": "${csv_file_path}" },
+        { "name": "AWS_REGION", "value": "${aws_region}" },
+        { "name": "PARALLELISM", "value": "${parallelism}" },
+        { "name": "MAX_PART_SIZE", "value": "${max_part_size}" },
+        { "name": "MAX_WAIT_TIME", "value": "${max_wait_time}" }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "${cloudwatch_log_group_name}",
+          "awslogs-region": "${aws_region}",
+          "awslogs-stream-prefix": "csv-s3-ops",
+          "awslogs-create-group": "true"
+        }
+      }
+    }
+  ]
+}
