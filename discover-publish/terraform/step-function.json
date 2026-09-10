@@ -65,6 +65,33 @@
         }
       ],
       "ResultPath": null,
+      "Next": "Store publish input"
+    },
+
+    "Store publish input": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:s3:putObject",
+      "Parameters": {
+        "Bucket": "${publish_input_bucket}",
+        "Key.$": "${publish_input_key}",
+        "Body.$": "States.JsonToString($)"
+      },
+      "Retry": [
+        {
+          "ErrorEquals": [ "States.TaskFailed" ],
+          "IntervalSeconds": 5,
+          "MaxAttempts": 2,
+          "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": [ "States.ALL" ],
+          "ResultPath": "$.error",
+          "Next": "Notify failure"
+        }
+      ],
+      "ResultPath": null,
       "Next": "Run discover-publish:publish-assets"
     },
 
