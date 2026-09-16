@@ -74,7 +74,7 @@
       "Parameters": {
         "Bucket": "${publish_input_bucket}",
         "Key.$": "${publish_input_key}",
-        "Body.$": "States.JsonToString($)"
+        "Body.$": "$"
       },
       "Retry": [
         {
