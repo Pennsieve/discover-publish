@@ -17,8 +17,8 @@ locals {
   ]
 
   # Must resolve identically in the state that writes the file and in both overrides that
-  # tell discover-publish where to read it.
-  publish_input_key = "States.Format('{}/publish-input.json', $.s3_publish_key)"
+  # tell discover-publish where to read it. s3_publish_key already ends in a slash.
+  publish_input_key = "States.Format('{}publish-input.json', $.s3_publish_key)"
 
   discover_publish_environment_override = [
     { Name = "PUBLISH_INPUT_BUCKET", Value     = aws_s3_bucket.publish_input.id },
