@@ -32,8 +32,12 @@ import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.services.s3.S3Client
 
+import io.circe.HCursor
+import io.circe.parser.parse
+
 import scala.concurrent.{ Await, ExecutionContext, Future }
 import scala.concurrent.duration._
+import scala.io.Source
 import akka.dispatch.MessageDispatcher
 import cats.data.EitherT
 import com.pennsieve.domain.CoreError
@@ -63,6 +67,52 @@ object Main extends App with StrictLogging {
       case "finalize" => Right(Finalize)
       case _ => Left(PublishError(s"Not a value command: ${cmd}"))
     }
+
+  def readPublishInput(
+    s3: S3,
+    bucket: String,
+    key: String
+  ): Either[PublishError, HCursor] =
+    s3.getObject(bucket, key)
+      .flatMap(
+        obj =>
+          Either.catchNonFatal(
+            Source.fromInputStream(obj.getObjectContent).mkString
+          )
+      )
+      .leftMap(
+        t =>
+          PublishError(
+            s"Could not read publish input 's3://$bucket/$key': ${t.getMessage}"
+          )
+      )
+      .flatMap(
+        body =>
+          parse(body)
+            .map(_.hcursor)
+            .leftMap(
+              err =>
+                PublishError(
+                  s"Publish input 's3://$bucket/$key' is not valid JSON: ${err.getMessage}"
+                )
+            )
+      )
+
+  /**
+    * Every field of the publish input is a string: the caller stringifies integers and
+    * booleans because ECS container overrides can only carry strings.
+    */
+  def getField(cursor: HCursor, key: String): Either[PublishError, String] =
+    cursor
+      .downField(key)
+      .as[String]
+      .bimap(
+        _ => PublishError(s"Missing key '$key' in publish input"),
+        value => {
+          logger.info(s"$key: $value")
+          value
+        }
+      )
 
   logger.info(s"Discover-Publish: Starting")
   try {
@@ -113,29 +163,34 @@ object Main extends App with StrictLogging {
 
     val result: Either[AbstractError, Unit] = for {
       publishAction <- getEnv("PUBLISH_ACTION").flatMap(getPublishAction(_))
-      userId <- getEnv("USER_ID").map(_.toInt)
-      userFirstName <- getEnv("USER_FIRST_NAME")
-      userLastName <- getEnv("USER_LAST_NAME")
-      userOrcid <- getEnv("USER_ORCID")
-      userNodeId <- getEnv("USER_NODE_ID")
-      organizationId <- getEnv("ORGANIZATION_ID").map(_.toInt)
-      organizationNodeId <- getEnv("ORGANIZATION_NODE_ID")
-      organizationName <- getEnv("ORGANIZATION_NAME")
-      datasetId <- getEnv("DATASET_ID").map(_.toInt)
-      datasetNodeId <- getEnv("DATASET_NODE_ID")
-      publishedDatasetId <- getEnv("PUBLISHED_DATASET_ID").map(_.toInt)
-      version <- getEnv("VERSION").map(_.toInt)
-      contributors <- getEnv("CONTRIBUTORS")
-      collections <- getEnv("COLLECTIONS")
-      externalPublications <- getEnv("EXTERNAL_PUBLICATIONS")
-      doi <- getEnv("DOI")
 
-      s3Bucket <- getEnv("S3_BUCKET") // either the publish or embargo bucket
-      s3Key <- getEnv("S3_PUBLISH_KEY")
+      inputBucket <- getEnv("PUBLISH_INPUT_BUCKET")
+      inputKey <- getEnv("PUBLISH_INPUT_KEY")
+      input <- readPublishInput(s3, inputBucket, inputKey)
 
-      workflowId <- getEnv("WORKFLOW_ID").map(_.toLong)
+      userId <- getField(input, "user_id").map(_.toInt)
+      userFirstName <- getField(input, "user_first_name")
+      userLastName <- getField(input, "user_last_name")
+      userOrcid <- getField(input, "user_orcid")
+      userNodeId <- getField(input, "user_node_id")
+      organizationId <- getField(input, "organization_id").map(_.toInt)
+      organizationNodeId <- getField(input, "organization_node_id")
+      organizationName <- getField(input, "organization_name")
+      datasetId <- getField(input, "dataset_id").map(_.toInt)
+      datasetNodeId <- getField(input, "dataset_node_id")
+      publishedDatasetId <- getField(input, "published_dataset_id").map(_.toInt)
+      version <- getField(input, "version").map(_.toInt)
+      contributors <- getField(input, "contributors")
+      collections <- getField(input, "collections")
+      externalPublications <- getField(input, "external_publications")
+      doi <- getField(input, "doi")
 
-      expectPrevious <- getEnv("EXPECT_PREVIOUS").map(_.toBoolean)
+      s3Bucket <- getField(input, "s3_bucket") // either the publish or embargo bucket
+      s3Key <- getField(input, "s3_publish_key")
+
+      workflowId <- getField(input, "workflow_id").map(_.toLong)
+
+      expectPrevious <- getField(input, "expect_previous").map(_.toBoolean)
 
       publishContainer = Await.result(
         PublishContainer.secureContainer(

@@ -77,6 +77,19 @@ data "aws_iam_policy_document" "discover_publish_s3_read_access_iam_policy_docum
       "${data.terraform_remote_state.platform_infrastructure.outputs.awsod_edots_publish50_bucket_arn}/*",
     ]
   }
+
+  statement {
+    sid    = "S3ReadPublishInput"
+    effect = "Allow"
+
+    actions = [
+      "s3:GetObject",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.publish_input.arn}/*",
+    ]
+  }
 }
 
 # Create IAM Policy for S3 write access

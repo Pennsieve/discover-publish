@@ -233,4 +233,17 @@ data "aws_iam_policy_document" "sfn_state_machine_iam_policy_document" {
       data.terraform_remote_state.platform_infrastructure.outputs.discover_publish_kms_key_arn,
     ]
   }
+
+  statement {
+    sid    = "S3WritePublishInput"
+    effect = "Allow"
+
+    actions = [
+      "s3:PutObject",
+    ]
+
+    resources = [
+      "${aws_s3_bucket.publish_input.arn}/*",
+    ]
+  }
 }

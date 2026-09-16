@@ -16,14 +16,14 @@ locals {
     { Name = "S3_BUCKET",            "Value.$" = "$.s3_bucket" }
   ]
 
-  discover_publish_environment_override = concat(local.common_environment_override, [
-    { Name = "CONTRIBUTORS",          "Value.$" = "$.contributors" },
-    { Name = "COLLECTIONS",           "Value.$" = "$.collections" },
-    { Name = "EXTERNAL_PUBLICATIONS", "Value.$" = "$.external_publications" },
-    { Name = "VERSION",               "Value.$" = "$.version" },
-    { Name = "WORKFLOW_ID",           "Value.$" = "$.workflow_id" },
-    { Name = "EXPECT_PREVIOUS",       "Value.$" = "$.expect_previous" }
-  ])
+  # Must resolve identically in the state that writes the file and in both overrides that
+  # tell discover-publish where to read it.
+  publish_input_key = "States.Format('{}/publish-input.json', $.s3_publish_key)"
+
+  discover_publish_environment_override = [
+    { Name = "PUBLISH_INPUT_BUCKET", Value     = aws_s3_bucket.publish_input.id },
+    { Name = "PUBLISH_INPUT_KEY",    "Value.$" = local.publish_input_key }
+  ]
 
   step_function_variables = {
     fargate_ecs_cluster_arn                 = data.terraform_remote_state.fargate.outputs.ecs_cluster_arn
@@ -37,6 +37,9 @@ locals {
 
     common_environment_override             = local.common_environment_override
     discover_publish_environment_override   = local.discover_publish_environment_override
+
+    publish_input_bucket                    = aws_s3_bucket.publish_input.id
+    publish_input_key                       = local.publish_input_key
 
     ecs_network = {
       AwsvpcConfiguration = {
