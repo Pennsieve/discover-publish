@@ -32,7 +32,7 @@ import software.amazon.awssdk.regions.Region
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient
 import software.amazon.awssdk.services.s3.S3Client
 
-import io.circe.HCursor
+import io.circe.{ HCursor, Json }
 import io.circe.parser.parse
 
 import scala.concurrent.{ Await, ExecutionContext, Future }
@@ -68,51 +68,68 @@ object Main extends App with StrictLogging {
       case _ => Left(PublishError(s"Not a value command: ${cmd}"))
     }
 
+  def jsonType(json: Json): String =
+    json.fold(
+      "null",
+      _ => "boolean",
+      _ => "number",
+      _ => "string",
+      _ => "array",
+      _ => "object"
+    )
+
   def readPublishInput(
     s3: S3,
     bucket: String,
     key: String
-  ): Either[PublishError, HCursor] =
-    s3.getObject(bucket, key)
-      .flatMap(
-        obj =>
-          Either.catchNonFatal(
-            Source.fromInputStream(obj.getObjectContent).mkString
-          )
-      )
-      .leftMap(
-        t =>
-          PublishError(
-            s"Could not read publish input 's3://$bucket/$key': ${t.getMessage}"
-          )
-      )
-      .flatMap(
-        body =>
-          parse(body)
-            .map(_.hcursor)
-            .leftMap(
-              err =>
-                PublishError(
-                  s"Publish input 's3://$bucket/$key' is not valid JSON: ${err.getMessage}"
-                )
+  ): Either[PublishError, HCursor] = {
+    def fail(reason: String): PublishError =
+      PublishError(s"Publish input 's3://$bucket/$key' $reason")
+
+    for {
+      body <- s3
+        .getObject(bucket, key)
+        .flatMap(
+          obj =>
+            Either.catchNonFatal(
+              Source.fromInputStream(obj.getObjectContent).mkString
             )
+        )
+        .leftMap(t => fail(s"could not be read: ${t.getMessage}"))
+      json <- parse(body).leftMap(
+        err => fail(s"is not valid JSON: ${err.getMessage}")
       )
+      // A file encoded twice parses as a JSON string, which would otherwise be
+      // reported as every field being missing.
+      cursor <- Either.cond(
+        json.isObject,
+        json.hcursor,
+        fail(s"is a JSON ${jsonType(json)}, not an object")
+      )
+    } yield cursor
+  }
 
   /**
     * Every field of the publish input is a string: the caller stringifies integers and
     * booleans because ECS container overrides can only carry strings.
     */
-  def getField(cursor: HCursor, key: String): Either[PublishError, String] =
-    cursor
-      .downField(key)
-      .as[String]
-      .bimap(
-        _ => PublishError(s"Missing key '$key' in publish input"),
-        value => {
-          logger.info(s"$key: $value")
-          value
-        }
-      )
+  def getField(cursor: HCursor, key: String): Either[PublishError, String] = {
+    val field = cursor.downField(key)
+
+    field.as[String] match {
+      case Right(value) =>
+        logger.info(s"$key: $value")
+        Right(value)
+      case Left(_) =>
+        Left(field.focus match {
+          case None => PublishError(s"Missing key '$key' in publish input")
+          case Some(json) =>
+            PublishError(
+              s"Key '$key' in publish input is a ${jsonType(json)}, not a string"
+            )
+        })
+    }
+  }
 
   logger.info(s"Discover-Publish: Starting")
   try {
