@@ -238,6 +238,7 @@ lazy val discoverPublishSettings = Seq(
     "software.amazon.awssdk" % "url-connection-client" % awsV2Version,
     "com.pennsieve" %% "pennsieve-core" % coreVersion,
     "com.pennsieve" %% "core-models" % coreVersion,
+    "com.github.tototoshi" %% "scala-csv" % "1.3.10",
     "org.scalatest" %% "scalatest" % scalatestVersion % Test,
     "com.typesafe.akka" %% "akka-stream-testkit" % akkaVersion % Test,
     "org.scalamock" %% "scalamock" % "5.2.0" % Test,
