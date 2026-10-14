@@ -20,15 +20,20 @@ import com.pennsieve.aws.s3.S3
 import com.pennsieve.clients.{ DatasetAssetClient, S3DatasetAssetClient }
 import com.pennsieve.core.utilities.{
   DatabaseContainer,
-  DatasetManagerContainer,
   DatasetMapperContainer,
+  DefaultDatasetManagerContainer,
   DatasetRoleContainer,
   OrganizationContainer,
   PackagesMapperContainer,
   UserPermissionContainer
 }
 import com.pennsieve.models.{ Organization, User }
-import com.pennsieve.managers.{ FileManager, PackageManager }
+import com.pennsieve.managers.{
+  FileManager,
+  FileManagerImpl,
+  PackageManager,
+  PackageManagerImpl
+}
 import com.pennsieve.models._
 import com.pennsieve.utilities.Container
 import com.typesafe.config.Config
@@ -127,15 +132,15 @@ case class PublishContainer(
     with PublishContainerConfig
     with OrganizationContainer
     with PackagesMapperContainer
-    with DatasetManagerContainer
+    with DefaultDatasetManagerContainer
     with DatasetAssetsContainer
     with UserPermissionContainer
     with DatasetRoleContainer {
 
-  lazy val packageManager: PackageManager = new PackageManager(datasetManager)
+  lazy val packageManager: PackageManager = new PackageManagerImpl(datasetManager)
 
   lazy val fileManager: FileManager =
-    new FileManager(packageManager, organization)
+    new FileManagerImpl(packageManager, organization)
 
   // Discover-publish connects to a local database which does not
   // support SSL
