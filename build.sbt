@@ -248,9 +248,11 @@ lazy val discoverPublishSettings = Seq(
   docker / dockerfile := {
     val artifact: File = assembly.value
     val artifactTargetPath = s"/app/${artifact.name}"
-    new SecureDockerfile("pennsieve/openjdk:8-alpine3.9") {
+    new SecureDockerfile(SecureDockerfile.JavaImage) {
       copy(artifact, artifactTargetPath, chown = "pennsieve:pennsieve")
-      cmd("java", "-jar", artifactTargetPath)
+      // The base image's entrypoint is cloudwrap; this task gets its config
+      // from the task definition's environment instead.
+      entryPoint("java", "-jar", artifactTargetPath)
     }
   },
   docker / imageNames := Seq(ImageName("pennsieve/discover-publish:latest")),
