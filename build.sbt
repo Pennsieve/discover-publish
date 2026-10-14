@@ -58,7 +58,7 @@ lazy val swaggerAkkaHttpVersion = "1.5.2"
 
 lazy val auditMiddlewareVersion = "1.0.3"
 lazy val authMiddlewareVersion = "5.1.3"
-lazy val coreVersion = "422-eaa5968"
+lazy val coreVersion = "440-00492ea"
 
 lazy val awsVersion = "1.12.797"
 lazy val awsV2Version = "2.42.28"
@@ -89,9 +89,8 @@ lazy val slickPgVersion = "0.20.3"
 
 lazy val slickCatsVersion = "0.10.4"
 
-lazy val testContainersVersion = "0.40.1"
+lazy val testContainersVersion = "0.44.1"
 lazy val utilitiesVersion = "4-55953e4"
-lazy val jobSchedulingServiceClientVersion = "6-3251c91"
 lazy val serviceUtilitiesVersion = "9-b838dd9"
 lazy val discoverServiceClientVersion = "98-bd315fe"
 lazy val doiServiceClientVersion = "12-756107b"
@@ -179,7 +178,6 @@ lazy val coreSettings = Seq(
   scalacOptions ++= Seq("-language:higherKinds"),
   libraryDependencies ++= Seq(
     "com.pennsieve" %% "auth-middleware" % authMiddlewareVersion,
-    "com.pennsieve" %% "job-scheduling-service-client" % jobSchedulingServiceClientVersion,
     "com.pennsieve" %% "service-utilities" % serviceUtilitiesVersion,
     "com.pennsieve" %% "utilities" % utilitiesVersion,
     "commons-codec" % "commons-codec" % "1.10",
@@ -241,7 +239,10 @@ lazy val discoverPublishSettings = Seq(
     "org.scalamock" %% "scalamock" % "5.2.0" % Test,
     "org.mock-server" % "mockserver-client-java-no-dependencies" % "5.14.0" % Test,
     "com.pennsieve" %% "pennsieve-core" % coreVersion % Test classifier "tests",
-    "com.dimafeng" %% "testcontainers-scala" % testContainersVersion % Test
+    "com.dimafeng" %% "testcontainers-scala" % testContainersVersion % Test,
+    // testcontainers-scala still uses JUnit 4's Description; Testcontainers 2.x
+    // (from 0.44) no longer brings JUnit along.
+    "junit" % "junit" % "4.13.2" % Test
   ),
   excludeDependencies ++= unwantedDependencies,
   docker / dockerfile := {

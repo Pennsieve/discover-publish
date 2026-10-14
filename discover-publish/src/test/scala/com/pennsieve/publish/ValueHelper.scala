@@ -18,7 +18,7 @@ package com.pennsieve.publish
 
 import cats.implicits._
 import com.pennsieve.aws.s3.S3
-import com.pennsieve.managers.{ DatasetStatusManager, FileManager }
+import com.pennsieve.managers.{ DatasetStatusManagerImpl, FileManager }
 import com.pennsieve.models.{
   Dataset,
   DatasetAsset,
@@ -258,7 +258,7 @@ trait ValueHelper extends Matchers {
   )(implicit
     executionContext: ExecutionContext
   ): DatasetStatus =
-    new DatasetStatusManager(
+    new DatasetStatusManagerImpl(
       databaseContainer.db,
       databaseContainer.organization
     ).create(displayName).await.value

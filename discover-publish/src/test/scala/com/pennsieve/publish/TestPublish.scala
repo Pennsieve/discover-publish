@@ -70,7 +70,7 @@ import org.scalatest.Inside.inside
 case class InsecureDatabaseContainer(config: Config, organization: Organization)
     extends Container
     with DatabaseContainer
-    with UserManagerContainer
+    with DefaultUserManagerContainer
     with OrganizationContainer
     with DatasetMapperContainer
     with DatasetAssetsContainer
@@ -83,7 +83,7 @@ object InsecureDatabaseContainer {
   case class InsecureOrganizationManagerContainer(config: Config)
       extends Container
       with DatabaseContainer
-      with OrganizationManagerContainer {
+      with DefaultOrganizationManagerContainer {
     override val postgresUseSSL: Boolean = false
   }
 
