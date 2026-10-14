@@ -1,17 +1,28 @@
 Global / cancelable := true
 
 // common settings
+// Pennsieve packages live in AWS CodeArtifact (pennsieve-cc), `maven` repository.
+// Access is IAM: the build exchanges the active AWS credentials -- the Jenkins
+// agent's instance role, or `assume-role non-prod admin` locally -- for a
+// short-lived token. CODEARTIFACT_AUTH_TOKEN, if set, is used instead.
+lazy val codeArtifactHost = "pennsieve-932986170183.d.codeartifact.us-east-1.amazonaws.com"
+lazy val codeArtifactRepo = s"https://$codeArtifactHost/maven/maven/"
+lazy val codeArtifactToken: String = sys.env.get("CODEARTIFACT_AUTH_TOKEN").getOrElse {
+  import scala.sys.process._
+  val cmd = Seq("aws", "codeartifact", "get-authorization-token", "--domain", "pennsieve",
+    "--domain-owner", "932986170183", "--region", "us-east-1",
+    "--query", "authorizationToken", "--output", "text")
+  scala.util.Try(cmd.!!(ProcessLogger(_ => ())).trim).getOrElse {
+    println("[warn] No CodeArtifact token: AWS credentials missing or not allowed. Run assume-role non-prod admin.")
+    ""
+  }
+}
+
 ThisBuild / resolvers ++= Seq(
-  "Pennsieve Releases" at "https://nexus.pennsieve.cc/repository/maven-releases",
-  "Pennsieve Snapshots" at "https://nexus.pennsieve.cc/repository/maven-snapshots",
+  "pennsieve" at codeArtifactRepo
 ) ++ Resolver.sonatypeOssRepos("snapshots")
 
-ThisBuild / credentials += Credentials(
-  "Sonatype Nexus Repository Manager",
-  "nexus.pennsieve.cc",
-  sys.env("PENNSIEVE_NEXUS_USER"),
-  sys.env("PENNSIEVE_NEXUS_PW")
-)
+ThisBuild / credentials += Credentials("pennsieve/maven", codeArtifactHost, "aws", codeArtifactToken)
 
 // Temporarily disable Coursier because parallel builds fail on Jenkins.
 // See https://app.clickup.com/t/a8ned9
@@ -26,18 +37,6 @@ ThisBuild / licenses := List(
 ThisBuild / startYear := Some(2021)
 
 ThisBuild / version := sys.props.get("version").getOrElse("bootstrap-SNAPSHOT")
-
-val publishToNexus =
-  settingKey[Option[Resolver]]("Pennsieve Nexus repository resolver")
-
-ThisBuild / publishToNexus := {
-  val nexus = "https://nexus.pennsieve.cc/repository"
-  if (isSnapshot.value) {
-    Some("Nexus Realm" at s"$nexus/maven-snapshots")
-  } else {
-    Some("Nexus Realm" at s"$nexus/maven-releases")
-  }
-}
 
 val remoteCacheLocation =
   sys.props.get("remote-cache").getOrElse("/tmp/sbt/pennsieve-api")
@@ -174,7 +173,6 @@ lazy val commonSettings = Seq(
 // core settings
 lazy val coreSettings = Seq(
   name := "pennsieve-core",
-  publishTo := publishToNexus.value,
   Test / publishArtifact := true,
   Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oD"),
   publishMavenStyle := true,
