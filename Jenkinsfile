@@ -1,12 +1,8 @@
 #!groovy
 
+// sbt resolves Pennsieve libraries through AWS CodeArtifact with a short-lived
+// token from the agent's instance role (see build.sbt); no Jenkins credential.
 timestamps {
-    def pennsieveNexusCreds = usernamePassword(
-        credentialsId: 'pennsieve-nexus-ci-login',
-        usernameVariable: 'PENNSIEVE_NEXUS_USER',
-        passwordVariable: 'PENNSIEVE_NEXUS_PW'
-    )
-
     node('executor') {
         checkout scm
 
@@ -18,20 +14,16 @@ timestamps {
         try {
 
             stage('Build') {
-                withCredentials([pennsieveNexusCreds]) {
-                    sh "${sbt} clean compile pushRemoteCache"
-                }
+                sh "${sbt} clean compile pushRemoteCache"
                 stash name: "${remoteCache}", includes: "${remoteCache}/**/*"
             }
 
             stage('Test') {
                 unstash name: "${remoteCache}"
-                withCredentials([pennsieveNexusCreds]) {
-                    try {
-                        sh "${sbt} clean pullRemoteCache test"
-                    } finally {
-                        junit '**/target/test-reports/*.xml'
-                    }
+                try {
+                    sh "${sbt} clean pullRemoteCache test"
+                } finally {
+                    junit '**/target/test-reports/*.xml'
                 }
             }
 
@@ -41,7 +33,7 @@ timestamps {
 
                 stage('Publish Containers') {
                     def publishContainerSteps = containers.collectEntries {
-                        ["${it}" : generatePublishContainerStep(it, sbt, imageTag, pennsieveNexusCreds, remoteCache)]
+                        ["${it}" : generatePublishContainerStep(it, sbt, imageTag, remoteCache)]
                     }
                     publishContainerSteps.failFast = true
                     parallel publishContainerSteps
@@ -77,7 +69,7 @@ def generateDeployStep(String service, String imageTag) {
 }
 
 // Generate parallel container publish steps
-def generatePublishContainerStep(String service, String sbt, String imageTag, creds, String remoteCache) {
+def generatePublishContainerStep(String service, String sbt, String imageTag, String remoteCache) {
     return {
         node('executor') {
             checkout scm
@@ -96,9 +88,7 @@ def generatePublishContainerStep(String service, String sbt, String imageTag, cr
                     break
             }
 
-            withCredentials([creds]) {
-                sh "${sbt} clean pullRemoteCache ${service}/docker"
-            }
+            sh "${sbt} clean pullRemoteCache ${service}/docker"
 
             for (image in images) {
                 if (['clamd', 'discover-pgdump-postgres'].contains(image)) {
