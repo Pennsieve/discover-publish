@@ -68,6 +68,8 @@ data "aws_iam_policy_document" "discover_publish_s3_read_access_iam_policy_docum
 
       data.terraform_remote_state.platform_infrastructure.outputs.precision_storage_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_storage_bucket_arn}/*",
+      data.terraform_remote_state.platform_infrastructure.outputs.ember_pennsieve_storage_bucket_arn,
+      "${data.terraform_remote_state.platform_infrastructure.outputs.ember_pennsieve_storage_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.precision_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.precision_embargo50_bucket_arn,
