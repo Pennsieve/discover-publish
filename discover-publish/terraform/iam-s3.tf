@@ -30,8 +30,6 @@ data "aws_iam_policy_document" "discover_publish_s3_read_access_iam_policy_docum
     resources = [
       data.terraform_remote_state.platform_infrastructure.outputs.discover_pgdump_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.discover_pgdump_bucket_arn}/*",
-      data.terraform_remote_state.upload_service_v2.outputs.uploads_bucket_arn,
-      "${data.terraform_remote_state.upload_service_v2.outputs.uploads_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.storage_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.storage_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.dataset_assets_bucket_arn,
