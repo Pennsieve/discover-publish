@@ -73,6 +73,8 @@ lazy val ficusVersion = "1.5.2"
 
 lazy val flywayVersion = "4.2.0"
 
+lazy val jacksonVersion = "2.17.2"
+
 lazy val json4sVersion = "3.5.5"
 
 lazy val jettyVersion = "9.1.3.v20140225"
@@ -215,6 +217,13 @@ lazy val coreSettings = Seq(
 
 lazy val discoverPublishSettings = Seq(
   name := "discover-publish",
+  // Keep jackson-module-scala (via swagger-scala-module) in step with the
+  // jackson-databind pulled in by the AWS SDK.
+  dependencyOverrides ++= Seq(
+    "com.fasterxml.jackson.core" % "jackson-core" % jacksonVersion,
+    "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
+    "com.fasterxml.jackson.module" %% "jackson-module-scala" % jacksonVersion
+  ),
   libraryDependencies ++= Seq(
     "org.typelevel" %% "cats-core" % catsVersion,
     "commons-io" % "commons-io" % commonsIoVersion,
@@ -237,7 +246,7 @@ lazy val discoverPublishSettings = Seq(
     "org.scalatest" %% "scalatest" % scalatestVersion % Test,
     "com.typesafe.akka" %% "akka-stream-testkit" % akkaVersion % Test,
     "org.scalamock" %% "scalamock" % "5.2.0" % Test,
-    "org.mock-server" % "mockserver-client-java-no-dependencies" % "5.14.0" % Test,
+    "org.mock-server" % "mockserver-client-java" % "5.14.0" % Test,
     "com.pennsieve" %% "pennsieve-core" % coreVersion % Test classifier "tests",
     "com.dimafeng" %% "testcontainers-scala" % testContainersVersion % Test,
     // testcontainers-scala still uses JUnit 4's Description; Testcontainers 2.x
