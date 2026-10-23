@@ -2987,11 +2987,8 @@ class TestPublish
     )
 
   def deletePackage(`package`: Package): Unit = {
-    val storageManager =
-      new StorageManager(publishContainer.db, testOrganization)
-    val packagesManager = publishContainer.packageManager
     val traceId = TraceId("test-delete-packge")
-    packagesManager.delete(traceId, `package`)(storageManager).await.value
+    publishContainer.packageManager.delete(traceId, `package`).await.value
   }
 
   def createFile(
