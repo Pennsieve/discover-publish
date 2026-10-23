@@ -114,6 +114,8 @@ lazy val defaultMergeStrategy = settingKey[String => MergeStrategy](
 )
 
 ThisBuild / defaultMergeStrategy := {
+  // ServiceLoader registrations must survive; slf4j 2.x finds logback this way.
+  case PathList("META-INF", "services", _@_*) => MergeStrategy.filterDistinctLines
   case PathList("META-INF", _@_*) => MergeStrategy.discard
   case PathList("PropertyList-1.0.dtd", _@_*) => MergeStrategy.last
   case PathList("codegen-resources", "customization.config", _@_*) =>
