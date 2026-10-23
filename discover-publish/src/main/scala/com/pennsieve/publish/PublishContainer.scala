@@ -21,8 +21,8 @@ import com.pennsieve.clients.{ DatasetAssetClient, S3DatasetAssetClient }
 import com.pennsieve.core.utilities.{
   DatabaseContainer,
   DatasetMapperContainer,
-  DefaultDatasetManagerContainer,
   DatasetRoleContainer,
+  DefaultDatasetManagerContainer,
   OrganizationContainer,
   PackagesMapperContainer,
   UserPermissionContainer
@@ -137,7 +137,9 @@ case class PublishContainer(
     with UserPermissionContainer
     with DatasetRoleContainer {
 
-  lazy val packageManager: PackageManager = new PackageManagerImpl(datasetManager)
+  lazy val packageManager: PackageManager = new PackageManagerImpl(
+    datasetManager
+  )
 
   lazy val fileManager: FileManager =
     new FileManagerImpl(packageManager, organization)
