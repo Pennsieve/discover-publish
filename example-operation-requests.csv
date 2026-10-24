@@ -1,0 +1,7 @@
+operation,source_bucket,source_key,source_version_id,destination_bucket,destination_key
+COPY,my-source-bucket,path/to/file1.txt,,my-dest-bucket,new/path/file1.txt
+COPY,my-source-bucket,path/to/file2.txt,abc123xyz456,my-dest-bucket,new/path/file2.txt
+DELETE,my-source-bucket,path/to/old-file.txt,,,
+DELETE,my-source-bucket,path/to/specific-version.txt,version123,,
+LIST,my-source-bucket,data/file3.dat,,,
+KEEP,source-bucket-2,documents/doc.pdf,,,
