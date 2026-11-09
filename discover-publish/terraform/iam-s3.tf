@@ -50,8 +50,6 @@ data "aws_iam_policy_document" "discover_publish_s3_read_access_iam_policy_docum
 
       data.terraform_remote_state.platform_infrastructure.outputs.sparc_storage_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_storage_bucket_arn}/*",
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.awsod_sparc_publish50_bucket_arn,
@@ -136,8 +134,6 @@ data "aws_iam_policy_document" "discover_publish_s3_write_access_iam_policy_docu
       data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn,
       "${data.terraform_remote_state.africa_south_region.outputs.af_south_s3_embargo_bucket_arn}/*",
 
-      data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn,
-      "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_publish50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo50_bucket_arn,
       "${data.terraform_remote_state.platform_infrastructure.outputs.sparc_embargo50_bucket_arn}/*",
       data.terraform_remote_state.platform_infrastructure.outputs.awsod_sparc_publish50_bucket_arn,
