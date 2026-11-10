@@ -1,0 +1,23 @@
+FROM eclipse-temurin:8-jdk
+
+# Set working directory
+WORKDIR /app
+
+# Install bash for entrypoint script
+# USER root
+# RUN apk add --no-cache bash
+# USER pennsieve
+
+# Copy the assembly JAR
+# ARG JAR_FILE=discover-publish/discover-publish/target/scala-2.13/csv-s3-ops.jar
+COPY csv-s3-ops.jar /app/csv-s3-ops.jar
+
+# Default to CSV S3 Copy main class
+ENV MAIN_CLASS=com.pennsieve.publish.CsvS3OpsMain
+
+# Java options for container environment
+# ENV JAVA_OPTS="-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
+ENV JAVA_OPTS=""
+
+# Run the application with the specified main class
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -cp /app/csv-s3-ops.jar $MAIN_CLASS"]
